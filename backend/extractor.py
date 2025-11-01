@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 from typing import Dict, Any
@@ -48,7 +49,6 @@ class Extractor:
             from langchain_openai import AzureChatOpenAI, ChatOpenAI
         except Exception:
             return _mock_extract(transcript)
-
         provider = os.getenv("LLM_PROVIDER", "azure").lower()
         if provider == "azure":
             llm = AzureChatOpenAI(
