@@ -3,7 +3,7 @@ import logging
 import os
 from typing import Any, Dict
 
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 
 from .schemas import ExtractionResult
@@ -41,27 +41,32 @@ class Extractor:
         system = (
             "You are an Agile Product Owner. Extract Jira-ready tasks from meeting transcripts. "
             "Return STRICT JSON following the schema:\n"
-            "{\n  \"tasks\": [\n    {\n      \"summary\": str, \"description\": str, "
+            "{{\n  \"tasks\": [\n    {{\n      \"summary\": str, \"description\": str, "
             "\"issue_type\": one of [\"Story\",\"Task\",\"Bug\",\"Spike\"], "
             "\"assignee_name\": str|null, \"priority\": one of [\"Low\",\"Medium\",\"High\"], "
-            "\"story_points\": int|null, \"labels\": [str], \"links\": [str], \"quotes\": [str]\n    }\n  ]\n}"
+            "\"story_points\": int|null, \"labels\": [str], \"links\": [str], \"quotes\": [str]\n    }}\n  ]\n}}"
             "\nIf no assignee, set null. Use quotes to include short verbatim snippets from the transcript that justify each task."
         )
-        human = "Transcript:\n{transcript}\n---\nReturn only JSON, no prose."
-        prompt = ChatPromptTemplate.from_messages([("system", system), ("human", human)])
-        chain = prompt | llm
+        human = f"Transcript:\n{transcript}\n---\nReturn only JSON, no prose."
+        messages = [SystemMessage(content=system), HumanMessage(content=human)]
 
-        resp = chain.invoke({"transcript": transcript}).content
+        resp = llm.invoke(messages).content
         try:
             data = json.loads(resp)
         except Exception as exc:
             logger.warning("LLM returned invalid JSON, attempting automatic repair", exc_info=exc)
             # Attempt automatic repair by asking the model to return only valid JSON
-            fix_messages = ChatPromptTemplate.from_messages([
-                ("system", "You repair JSON. Return valid JSON only, nothing else."),
-                ("human", f"Repair this into valid JSON matching the schema:```{resp}```")
-            ])
-            resp2 = (fix_messages | llm).invoke({}).content
+            repair_messages = [
+                SystemMessage(content="You repair JSON. Return valid JSON only, nothing else."),
+                HumanMessage(
+                    content=(
+                        "Repair this into valid JSON matching the schema:```"
+                        f"{resp}"
+                        "```"
+                    )
+                ),
+            ]
+            resp2 = llm.invoke(repair_messages).content
             data = json.loads(resp2)
         return data
 
