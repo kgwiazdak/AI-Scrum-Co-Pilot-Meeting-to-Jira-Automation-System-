@@ -20,19 +20,15 @@ def _speech_config() -> speechsdk.SpeechConfig:
     """Create a cached Azure Speech configuration instance."""
 
     key = os.getenv("AZURE_SPEECH_KEY")
-    endpoint = os.getenv("AZURE_SPEECH_ENDPOINT")
     region = os.getenv("AZURE_SPEECH_REGION")
 
     if not key:
         raise SpeechConfigurationError("Azure Speech key must be configured")
-
-    if endpoint:
-        config = speechsdk.SpeechConfig(subscription=key, endpoint=endpoint)
-    elif region:
+    if region:
         config = speechsdk.SpeechConfig(subscription=key, region=region)
     else:
         raise SpeechConfigurationError(
-            "Azure Speech endpoint or region must be configured"
+            "Azure Speech Key or region must be configured"
         )
 
     language = os.getenv("AZURE_SPEECH_LANGUAGE", "en-US")
