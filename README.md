@@ -4,14 +4,15 @@ Transkrypcja → Ekstrakcja zadań (LLM/RAG-ready), z walidacją JSON i artefakt
 
 ## Jak uruchomić lokalnie (MVP)
 
-Wymagania: Python 3.11+, [FFmpeg](https://ffmpeg.org/) (np. `sudo apt install ffmpeg`)
+Wymagania: Python 3.11+, [Poetry 2.x](https://python-poetry.org/docs/), [FFmpeg](https://ffmpeg.org/) (np. `sudo apt install ffmpeg`)
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r backend/requirements.txt
+poetry install --with dev
 export MOCK_LLM=1   # deterministyczny tryb bez kluczy i modeli
-uvicorn backend.app:app --reload
+poetry run uvicorn backend.app:app --reload
 ```
+
+Poetry automatycznie zarządza środowiskiem w `.venv`, więc nie trzeba ręcznie wywoływać `python -m venv` ani `pip install`.
 
 > Opcjonalnie ustaw `WHISPER_MODEL` (np. `base`, `small`, `medium`) aby wybrać wariant modelu Whisper używanego do
 > transkrypcji.

@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "sprint-planning-transcription2jira-tasks"
+version = "0.1.0"
+description = "FastAPI backend that transcribes sprint planning meetings and extracts Jira-ready tasks."
+authors = ["AI Scrum Co-Pilot <devnull@example.com>"]
+readme = "README.md"
+packages = [{ include = "backend" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "0.115.2"
+uvicorn = { version = "0.30.6", extras = ["standard"] }
+pydantic = "2.8.2"
+python-multipart = "0.0.9"
+langchain = "0.3.7"
+langchain-openai = "0.2.3"
+openai = ">=1.52.0,<2.0.0"
+azure-cognitiveservices-speech = ">=1.38,<2.0"
+python-dotenv = ">=1.0,<2.0"
+elevenlabs = "2.22.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.3"
+
+[build-system]
+requires = ["poetry-core>=1.9.0"]
+build-backend = "poetry.core.masonry.api"
