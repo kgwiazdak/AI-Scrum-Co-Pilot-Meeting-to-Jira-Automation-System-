@@ -1,3 +1,4 @@
+import datetime
 import uuid
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -20,19 +21,36 @@ _blob_storage_service: BlobStorageService | None = None
 async def extract(file: UploadFile = File(...)):
     meeting_id = str(uuid.uuid4())
     content = await get_content(file)
-    await save_original_file(meeting_id, file, content)
+    transcript_blob_uri = await save_original_file(meeting_id, file, content)
     transcript = await get_transcript(content, file.filename.lower())
     result = await get_result(transcript)
-    await store_and_log(file, result, transcript, meeting_id)
+    await store_and_log(file, result, transcript, meeting_id, transcript_blob_uri)
     return JSONResponse(content=result.dict())
 
 
-async def store_and_log(file, result, transcript, meeting_id):
+async def store_and_log(file, result, transcript, meeting_id, transcript_blob_uri: str | None):
     try:
         meeting_id, run_id = store_meeting_and_result(file.filename, transcript, result, meeting_id=meeting_id)
-        log_extraction_run(meeting_id=meeting_id, run_id=run_id, transcript=transcript, result=result)
-    except Exception:
-        pass
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Failed to persist meeting=%s result: %s", meeting_id, exc)
+        return
+
+    meeting_date = datetime.datetime.utcnow().date().isoformat()
+    try:
+        run_info = log_extraction_run(
+            meeting_id=meeting_id,
+            run_id=run_id,
+            transcript=transcript,
+            result=result,
+            meeting_date=meeting_date,
+            transcript_blob_uri=transcript_blob_uri,
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("MLflow logging failed for meeting_id=%s run_id=%s: %s", meeting_id, run_id, exc)
+        return
+
+    if run_info:
+        logger.info("MLflow run available at %s", run_info.run_url)
 
 
 async def get_result(transcript):
@@ -51,14 +69,14 @@ async def get_content(file):
     return content
 
 
-async def save_original_file(meeting_id: str, file: UploadFile, content: bytes) -> None:
+async def save_original_file(meeting_id: str, file: UploadFile, content: bytes) -> str:
     try:
         blob_service = get_blob_storage_service()
     except BlobStorageConfigError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     try:
-        await blob_service.save_file(
+        return await blob_service.save_file(
             meeting_id=meeting_id,
             original_filename=file.filename,
             content=content,

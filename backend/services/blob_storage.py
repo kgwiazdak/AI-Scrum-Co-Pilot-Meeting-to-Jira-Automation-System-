@@ -68,15 +68,15 @@ class BlobStorageService:
         content_type: Optional[str],
     ) -> str:
         blob_name = self._build_blob_name(meeting_id, original_filename)
-        await anyio.to_thread.run_sync(
+        blob_url = await anyio.to_thread.run_sync(
             self._upload_bytes,
             blob_name,
             content,
             content_type,
         )
-        return blob_name
+        return blob_url
 
-    def _upload_bytes(self, blob_name: str, data: bytes, content_type: Optional[str]) -> None:
+    def _upload_bytes(self, blob_name: str, data: bytes, content_type: Optional[str]) -> str:
         blob_client = self._container_client.get_blob_client(blob=blob_name)
         try:
             blob_client.upload_blob(
@@ -87,6 +87,7 @@ class BlobStorageService:
             logger.info("Uploaded file to Azure Blob Storage: %s", blob_name)
         except AzureError as exc:
             raise BlobStorageUploadError(f"Uploading blob '{blob_name}' failed") from exc
+        return blob_client.url
 
     @staticmethod
     def _build_blob_name(meeting_id: str, original_filename: str) -> str:
