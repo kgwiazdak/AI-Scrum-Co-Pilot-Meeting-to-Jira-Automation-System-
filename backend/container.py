@@ -5,6 +5,7 @@ from functools import lru_cache
 from backend.application.use_cases.extract_meeting import ExtractMeetingUseCase
 from backend.infrastructure.llm.task_extractor import LLMExtractor
 from backend.infrastructure.persistence.sqlite import SqliteMeetingsRepository
+from backend.infrastructure.queue.background import BackgroundMeetingImportQueue
 from backend.infrastructure.storage.blob import BlobStorageService
 from backend.infrastructure.telemetry.mlflow_adapter import MLflowTelemetryAdapter
 from backend.infrastructure.transcription.azure_conversation import (
@@ -69,3 +70,9 @@ def get_extract_use_case() -> ExtractMeetingUseCase:
         telemetry=telemetry,
         audio_extensions=SUPPORTED_AUDIO_EXTENSIONS,
     )
+
+
+@lru_cache(maxsize=1)
+def get_meeting_queue() -> BackgroundMeetingImportQueue:
+    use_case = get_extract_use_case()
+    return BackgroundMeetingImportQueue(use_case.process_job)

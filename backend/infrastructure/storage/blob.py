@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import anyio
+import asyncio
 from azure.core.exceptions import AzureError, ResourceExistsError
 from azure.storage.blob import BlobSasPermissions, BlobServiceClient, ContentSettings, generate_blob_sas
 
@@ -81,12 +81,7 @@ class BlobStorageService:
         content_type: Optional[str],
     ) -> str:
         blob_name = self._build_blob_name(meeting_id, original_filename)
-        blob_url = await anyio.to_thread.run_sync(
-            self._upload_bytes,
-            blob_name,
-            content,
-            content_type,
-        )
+        blob_url = await asyncio.to_thread(self._upload_bytes, blob_name, content, content_type)
         return blob_url
 
     def _upload_bytes(self, blob_name: str, data: bytes, content_type: Optional[str]) -> str:
@@ -134,7 +129,7 @@ class BlobStorageService:
 
     async def download_blob(self, blob_url: str) -> bytes:
         blob_name = self._extract_blob_name(blob_url)
-        return await anyio.to_thread.run_sync(self._download_bytes, blob_name)
+        return await asyncio.to_thread(self._download_bytes, blob_name)
 
     def _download_bytes(self, blob_name: str) -> bytes:
         blob_client = self._container_client.get_blob_client(blob=blob_name)

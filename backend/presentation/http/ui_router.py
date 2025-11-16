@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-import asyncio
 import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.application.use_cases.extract_meeting import ExtractMeetingUseCase
+from backend.application.commands.meeting_import import MeetingImportPayload, SubmitMeetingImportCommand
 from backend.infrastructure.persistence.sqlite import SqliteMeetingsRepository, TASK_STATUSES
 from backend.infrastructure.storage.blob import BlobStorageConfigError, BlobStorageService
-from backend.presentation.http.dependencies import blob_storage_service, data_repository, extraction_workflow
+from backend.presentation.http.dependencies import blob_storage_service, data_repository, submit_import_command
 
 router = APIRouter(prefix="/api", tags=["ui"])
 logger = logging.getLogger(__name__)
@@ -192,21 +191,15 @@ def create_blob_upload(
 @router.post("/meetings/import", status_code=202)
 async def import_meeting(
     payload: MeetingImportRequest,
-    workflow: ExtractMeetingUseCase = Depends(extraction_workflow),
+    command: SubmitMeetingImportCommand = Depends(submit_import_command),
 ):
-    meeting_id = payload.meetingId or str(uuid.uuid4())
-
-    async def _run() -> None:
-        try:
-            await workflow(
-                title=payload.title,
-                started_at=payload.startedAt,
-                blob_url=payload.blobUrl,
-                original_filename=payload.originalFilename,
-                meeting_id=meeting_id,
-            )
-        except Exception:
-            logger.exception("Asynchronous meeting import failed", extra={"meeting_id": meeting_id})
-
-    asyncio.create_task(_run())
+    meeting_id = await command.execute(
+        MeetingImportPayload(
+            title=payload.title,
+            started_at=payload.startedAt,
+            blob_url=payload.blobUrl,
+            original_filename=payload.originalFilename,
+            meeting_id=payload.meetingId,
+        )
+    )
     return {"meetingId": meeting_id, "status": "queued"}

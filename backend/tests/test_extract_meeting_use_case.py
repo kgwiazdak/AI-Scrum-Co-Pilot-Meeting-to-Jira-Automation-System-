@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import pytest
 
 from backend.application.use_cases.extract_meeting import ExtractMeetingUseCase
@@ -19,6 +20,13 @@ class DummyExtractor:
 class DummyRepository:
     def __init__(self) -> None:
         self.captured: dict[str, str | None] | None = None
+        self.statuses: list[tuple[str, str]] = []
+
+    def create_meeting_stub(self, **kwargs):
+        return None
+
+    def update_meeting_status(self, meeting_id: str, status: str) -> None:
+        self.statuses.append((meeting_id, status))
 
     def store_meeting_and_result(
         self,
@@ -29,6 +37,7 @@ class DummyRepository:
         meeting_id: str | None = None,
         title: str | None = None,
         started_at: str | None = None,
+        blob_url: str | None = None,
     ) -> tuple[str, str]:
         self.captured = {
             "filename": filename,
@@ -37,6 +46,7 @@ class DummyRepository:
             "transcript": transcript,
             "meeting_id": meeting_id,
             "tasks": len(result_model.tasks),
+            "blob_url": blob_url,
         }
         return meeting_id or "meeting-id", "run-id"
 
@@ -54,13 +64,11 @@ class DummyBlobStorage:
         raise AssertionError("save_file should not be used when blob_url is supplied")
 
 
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
+def test_extract_meeting_use_case_persists_custom_metadata():
+    asyncio.run(_run_persists_custom_metadata())
 
 
-@pytest.mark.anyio
-async def test_extract_meeting_use_case_persists_custom_metadata(anyio_backend):
+async def _run_persists_custom_metadata():
     payload = b"Meeting transcript line"
     result = ExtractionResult(
         tasks=[
@@ -96,10 +104,14 @@ async def test_extract_meeting_use_case_persists_custom_metadata(anyio_backend):
     assert repo.captured["started_at"] == "2024-10-01T12:00:00Z"
     assert repo.captured["filename"] == "notes.txt"
     assert repo.captured["meeting_id"] == "meeting-123"
+    assert repo.statuses[-1] == ("meeting-123", "completed")
 
 
-@pytest.mark.anyio
-async def test_extract_meeting_use_case_accepts_blob_reference(anyio_backend):
+def test_extract_meeting_use_case_accepts_blob_reference():
+    asyncio.run(_run_accepts_blob_reference())
+
+
+async def _run_accepts_blob_reference():
     payload = b"Blob based transcript"
     result = ExtractionResult(
         tasks=[

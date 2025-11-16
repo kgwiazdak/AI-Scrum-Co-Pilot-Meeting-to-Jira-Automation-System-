@@ -1,85 +1,96 @@
-# AI Scrum Co-Pilot — MVP (Faza 1)
+# Sprint Planning Copilot
 
-Transkrypcja → Ekstrakcja zadań (LLM/RAG-ready), z walidacją JSON i artefaktami.
+AI-driven assistant that ingests meeting recordings or transcripts, extracts structured Jira-ready tasks, and logs ML/telemetry data for later auditing. The system is event-driven: uploads happen straight to blob storage, the API enqueues work, and a worker processes meetings asynchronously.
 
-## Jak uruchomić lokalnie (MVP)
+## High-Level Architecture
 
-Wymagania: Python 3.11+, [Poetry 2.x](https://python-poetry.org/docs/), [FFmpeg](https://ffmpeg.org/) (np. `sudo apt install ffmpeg`)
-
-```bash
-poetry install --with dev
-export MOCK_LLM=1   # deterministyczny tryb bez kluczy i modeli
-poetry run uvicorn backend.app:app --reload
+```
++-------------+      +----------------+      +--------------------+      +------------------+
+| Frontend    | ---> | FastAPI API    | ---> | Async Queue/Worker | ---> | Persistence/MLflow|
+| (React/Vite)|      | (uploads/import)|      | (ExtractMeeting)   |      | SQLite + MLflow   |
++-------------+      +----------------+      +--------------------+      +------------------+
+      |                        |                       |                        |
+  SAS upload              Store stub            Download from blob        Write tasks & log runs
+  to Azure Blob           enqueue job           transcribe/extract        return status/tag data
 ```
 
-Poetry automatycznie zarządza środowiskiem w `.venv`, więc nie trzeba ręcznie wywoływać `python -m venv` ani `pip install`.
+### Key Components
 
-> Opcjonalnie ustaw `WHISPER_MODEL` (np. `base`, `small`, `medium`) aby wybrać wariant modelu Whisper używanego do
-> transkrypcji.
+- **Frontend (`frontend/`)** – React + Vite UI. Users pick meeting metadata, upload files (via SAS URL), and watch statuses (`queued`, `processing`, `completed`, `failed`). React Query handles polling.
+- **API (`backend/presentation/http/ui_router.py`)** – Issues SAS upload tokens, accepts import requests, exposes meeting/task CRUD. Imports call `SubmitMeetingImportCommand` and immediately return 202.
+- **Queue & Worker** – `BackgroundMeetingImportQueue` (asyncio) plus `ExtractMeetingUseCase`. In production you can swap for Redis/Azure queue.
+- **Domain & Application** – Ports define contracts (`backend/domain/ports.py`, `backend/domain/status.py`). Commands/use cases orchestrate ingestion (`backend/application/commands/meeting_import.py`, `backend/application/use_cases/extract_meeting.py`).
+- **Infrastructure** – SQLite repository, blob storage adapter, transcription/LLM adapters, MLflow logger.
 
-## Architektura backendu (hexagonal)
+## Workflow Example
 
-- **presentation** – `backend/presentation/http` (FastAPI routers + DTO dla UI, upload ticket API, import kolejek spotkań)
-- **application** – `backend/application/use_cases/extract_meeting.py` (orchestracja ingest → transcript → extract → persist)
-- **domain** – `backend/domain/ports.py` (porty/kontrakty dla adapterów)
-- **infrastructure** – adapters dla LLM (`backend/infrastructure/llm/task_extractor.py`), bazy (`backend/infrastructure/persistence/sqlite`), blob storage, telemetry i STT
-- **configuration** – `backend/settings.py` (Pydantic settings + DI w `backend/container.py`)
-- **schemas** – `backend/schemas.py` (Pydantic kontrakty dzielone przez aplikację)
+1. **Generate SAS** – UI calls `POST /api/uploads/blob` with filename. API returns `uploadUrl`, `blobUrl`, and `meetingId`.
+2. **Upload File** – Browser performs `PUT` to Azure Blob Storage using `uploadUrl`. (Ensure Azure Storage CORS allows `http://localhost:4173`).
+3. **Import Meeting** – UI sends `POST /api/meetings/import` with `{ title, startedAt, blobUrl, meetingId, originalFilename }`. API stores a stub row (`queued`) and enqueues the job.
+4. **Background Processing** – Worker downloads the blob, runs transcription/LLM extraction, stores transcript/tasks, and logs MLflow metrics/artifacts. Meeting status transitions `queued → processing → completed` (or `failed` on error).
+5. **Monitoring** – Frontend polls `/api/meetings` every few seconds when any meeting is queued/processing; tasks become available once status is completed.
 
-## Próbka
+## Important Files
 
-`samples/sample_transcript.txt` → wynik przez `curl`.
+| Path | Role |
+| --- | --- |
+| `backend/presentation/http/ui_router.py` | All API endpoints (uploads, import, meetings/tasks). |
+| `backend/application/commands/meeting_import.py` | Submission command: persist stub + enqueue queue job. |
+| `backend/application/use_cases/extract_meeting.py` | Worker logic: download blob, transcribe, extract, persist, log MLflow. |
+| `backend/domain/ports.py` | Contracts for blob storage, queue, repository, telemetry. |
+| `backend/domain/status.py` | Enum for meeting statuses shared with frontend. |
+| `backend/infrastructure/persistence/sqlite/repository.py` | SQLite repository, meeting/task CRUD, status updates. |
+| `backend/mlflow_logging.py` | MLflow integration: metrics, artifacts, summaries. |
+| `frontend/src/api/hooks.ts` | React Query hooks for SAS upload and meeting import. |
+| `frontend/src/features/meetings/MeetingsList.tsx` | Meeting list view, status chips, auto-polling. |
 
-## Przejście do F2
+## Running Locally
 
-- Wyłącz `MOCK_LLM` i skonfiguruj Azure OpenAI (`LLM_PROVIDER=azure`, itd.)
-- Skonfiguruj docelową usługę STT (np. Azure Speech) według potrzeb
-- Zamień SQLite na Postgres (SQLAlchemy) + dodaj RAG (Azure AI Search/pgvector)
+### Prerequisites
+- Python 3.11+
+- Poetry 2.x
+- FFmpeg (if using audio transcription)
+- Node.js 18+
+- Azure Blob Storage account (for SAS uploads)
 
-## Frontend (React + Vite)
+### Backend Setup
+```bash
+poetry install --with dev
+cp .env.sample .env  # configure Azure storage, MLflow, etc.
+poetry run uvicorn backend.app:app --reload
+```
+Key env vars:
+- `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER_NAME`
+- `MLFLOW_TRACKING_URI`, `MLFLOW_EXPERIMENT_NAME`
+- `MOCK_LLM=1` for deterministic extraction during local dev
 
-Interfejs użytkownika żyje w katalogu `frontend/` i jest zbudowany w oparciu o React (TypeScript), Material UI oraz React Query. Panel zawsze komunikuje się z backendem FastAPI, więc do pracy wymagany jest uruchomiony serwer API (np. `poetry run uvicorn ...` lub `docker compose up`).
-
-### Szybki start
-
+### Frontend Setup
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-
-- `npm run build` — produkcyjny build Vite
-- `npm run preview` — szybki podgląd statycznego buildu
-
-Domyślnie `.env.development` ustawia `VITE_API_URL=http://localhost:8000/api`, więc panel rozmawia z FastAPI i korzysta z danych w SQLite. Jeśli potrzebujesz trybu offline, zaimplementuj go we własnym zakresie (wsparcie MSW zostało usunięte w docelowym trybie produkcyjnym).
-
-### Architektura UI
-
-```
-frontend/src
-├─ app/          # routing, theming, providers
-├─ api/          # axios klient, React Query hooks
-├─ components/   # współdzielone elementy (DataGridToolbar, TaskDrawer, ConfirmDialog)
-├─ features/     # moduły meetings + tasks (listy, formularze, review HITL)
-├─ schemas/      # walidacja Zod (task/meeting)
-├─ types/        # modele domenowe
-└─ utils/        # formatery dat itp.
-```
-
-Kluczowe widoki:
-
-- `/review` — Review & Approve (DataGrid z inline edit + drawer, bulk approve/reject)
-- `/meetings` — lista spotkań + edycja/usuń
-- `/meetings/:id/tasks` — zadania z danego spotkania, filtry statusów, link do edycji
-- `/meetings/new` — formularz nowego spotkania (React Hook Form + Zod)
-- `/tasks/:id/edit` — pełna edycja zadania
+Ensure `.env.development` contains `VITE_API_URL=http://localhost:8000/api`.
 
 ### Docker Compose
+```
+docker compose up --build
+```
+This starts API (8000), MLflow (5000), and Nginx-served frontend (4173). Frontend talks to API via `/api`.
 
-`docker compose up --build` uruchamia:
+## Testing
 
-- `api` na porcie `8000`
-- `mlflow` na porcie `5000`
-- `frontend` (statyczny build Vite serwowany przez Nginx) na porcie `4173`
+Run all backend unit tests (including queue submission + MLflow metrics) via:
+```
+poetry run pytest backend/tests
+```
 
-Domyślnie frontend w kontenerze wskazuje na usługę backendową pod adresem `http://api:8000/api`. Własny adres można nadpisać przez zmienną `VITE_FRONTEND_API_URL`.
+## Tips for New Contributors
+
+1. **Follow the flow** – Start at `frontend/src/api/hooks.ts` → `ui_router.py` → `meeting_import.py` → `extract_meeting.py`. Understanding this path makes debugging easy.
+2. **Use statuses** – Meeting cards depend on `MeetingStatus` values. When adding features, update `backend/domain/status.py` and `frontend/src/types/index.ts` together.
+3. **Queue swaps** – `BackgroundMeetingImportQueue` is intentionally simple. To use Redis/Azure queue, implement `MeetingImportQueuePort.enqueue` and wire it in `backend/container.py`.
+4. **Telemetry** – MLflow artifacts live in `data/mlflow/artifacts`. Ensure MLflow service is running; failures usually come from missing env vars.
+5. **CORS for blobs** – Configure Azure Storage CORS to allow `http://localhost:4173` (methods `PUT,OPTIONS`). Without it uploads fail.
+
+This README replaces older documentation; consult `architecture_plan.md` for ongoing refactors.

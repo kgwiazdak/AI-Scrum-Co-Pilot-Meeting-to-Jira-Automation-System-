@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from backend.schemas import ExtractionResult
+from backend.domain.entities import MeetingImportJob
 
 
 @runtime_checkable
@@ -37,6 +38,19 @@ class ExtractionPort(Protocol):
 
 @runtime_checkable
 class MeetingsRepositoryPort(Protocol):
+    def create_meeting_stub(
+        self,
+        *,
+        meeting_id: str,
+        title: str,
+        started_at: str,
+        blob_url: str,
+    ) -> None:
+        """Persist an initial queued meeting entry."""
+
+    def update_meeting_status(self, meeting_id: str, status: str) -> None:
+        """Update ingestion status for an existing meeting."""
+
     def store_meeting_and_result(
         self,
         filename: str,
@@ -46,6 +60,7 @@ class MeetingsRepositoryPort(Protocol):
         meeting_id: str | None = None,
         title: str | None = None,
         started_at: str | None = None,
+        blob_url: str | None = None,
     ) -> tuple[str, str]:
         """Persist transcript and extraction payload and return (meeting_id, run_id)."""
 
@@ -63,3 +78,9 @@ class TelemetryPort(Protocol):
         transcript_blob_uri: str | None,
     ) -> None:
         """Emit telemetry for an extraction workflow."""
+
+
+@runtime_checkable
+class MeetingImportQueuePort(Protocol):
+    async def enqueue(self, job: MeetingImportJob) -> None:
+        """Submit a meeting import task for background processing."""

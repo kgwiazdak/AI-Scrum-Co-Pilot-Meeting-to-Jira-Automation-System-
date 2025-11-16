@@ -96,3 +96,16 @@ def test_build_phase_data_includes_full_transcript_and_tasks_artifacts():
 
     assert any(artifact.path.endswith("transcript_full.txt") for artifact in transcription_phase.artifacts)
     assert any(artifact.path.endswith("tasks.json") for artifact in normalization_phase.artifacts)
+
+
+def test_build_aggregate_metrics_sums_duplicates():
+    phases = [
+        logging_utils.PhaseData(name="one", metrics={"latency_ms_llm": 100.0, "cost_usd": 1.5}),
+        logging_utils.PhaseData(name="two", metrics={"latency_ms_llm": 50.0}),
+    ]
+    approval_stats = {"approval_rate": 0.5, "tasks_approved": 1}
+    metrics = logging_utils._build_aggregate_metrics(phases, tasks_extracted=2, json_valid_rate=1.0, approval_stats=approval_stats)
+    assert metrics["latency_ms_llm"] == 150.0
+    assert metrics["latency_ms_total"] == 150.0
+    assert metrics["cost_usd"] == 1.5
+    assert metrics["approval_rate"] == 0.5

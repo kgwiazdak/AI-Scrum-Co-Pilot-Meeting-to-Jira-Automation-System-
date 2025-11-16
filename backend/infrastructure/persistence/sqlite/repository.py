@@ -6,6 +6,7 @@ import uuid
 from typing import Any, Iterable, Optional
 
 from backend.domain.ports import MeetingsRepositoryPort
+from backend.domain.status import MeetingStatus
 from backend.schemas import ExtractionResult
 
 from .constants import ISSUE_TYPES, PRIORITIES, TASK_STATUSES
@@ -221,8 +222,6 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
         finally:
             conn.close()
         meeting_id = row["meeting_id"] if row else None
-        if meeting_id:
-            self._update_meeting_status(meeting_id)
         task = self.get_task(task_id)
         if task is None:
             raise ValueError("Task not found")
@@ -248,8 +247,6 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
             updated_count = cur.rowcount
         finally:
             conn.close()
-        for row in meeting_rows:
-            self._update_meeting_status(row["meeting_id"])
         return updated_count
 
     def list_users(self) -> list[dict[str, Any]]:
@@ -270,6 +267,48 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
             conn.close()
 
     # --- Ports implementation -------------------------------------------
+    def create_meeting_stub(
+        self,
+        *,
+        meeting_id: str,
+        title: str,
+        started_at: str,
+        blob_url: str,
+    ) -> None:
+        now = utc_now_iso()
+        conn = self._db.connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO meetings(id, title, created_at, started_at, status, source_url)
+                VALUES(?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title=excluded.title,
+                    started_at=excluded.started_at,
+                    status='queued',
+                    source_url=excluded.source_url
+                """,
+                (
+                    meeting_id,
+                    title,
+                    now,
+                    started_at,
+                    MeetingStatus.QUEUED.value,
+                    blob_url,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def update_meeting_status(self, meeting_id: str, status: str) -> None:
+        conn = self._db.connect()
+        try:
+            conn.execute("UPDATE meetings SET status = ? WHERE id = ?", (status, meeting_id))
+            conn.commit()
+        finally:
+            conn.close()
+
     def store_meeting_and_result(
         self,
         filename: str,
@@ -279,6 +318,7 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
         meeting_id: Optional[str] = None,
         title: Optional[str] = None,
         started_at: Optional[str] = None,
+        blob_url: Optional[str] = None,
     ) -> tuple[str, str]:
         meeting_id = meeting_id or str(uuid.uuid4())
         now = utc_now_iso()
@@ -286,21 +326,43 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
         meeting_started_at = started_at or now
         conn = self._db.connect()
         try:
-            conn.execute(
-                """
-                INSERT INTO meetings(id, title, transcript, created_at, started_at, status, source_text)
-                VALUES(?,?,?,?,?,?,?)
-                """,
-                (
-                    meeting_id,
-                    meeting_title,
-                    transcript,
-                    now,
-                    meeting_started_at,
-                    "pending",
-                    transcript,
-                ),
-            )
+            existing = conn.execute("SELECT 1 FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE meetings
+                    SET title = ?, transcript = ?, started_at = ?, status = 'completed',
+                        source_text = ?, source_url = COALESCE(source_url, ?)
+                    WHERE id = ?
+                    """,
+                    (
+                        meeting_title,
+                        transcript,
+                        meeting_started_at,
+                        transcript,
+                        blob_url,
+                        meeting_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO meetings(id, title, transcript, created_at, started_at, status, source_text, source_url)
+                    VALUES(?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        meeting_id,
+                        meeting_title,
+                        transcript,
+                        now,
+                        meeting_started_at,
+                        MeetingStatus.COMPLETED.value,
+                        transcript,
+                        blob_url,
+                    ),
+                )
+            conn.execute("DELETE FROM tasks WHERE meeting_id = ?", (meeting_id,))
+            conn.execute("DELETE FROM extraction_runs WHERE meeting_id = ?", (meeting_id,))
             run_id = str(uuid.uuid4())
             conn.execute(
                 """
@@ -344,25 +406,7 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
             conn.commit()
         finally:
             conn.close()
-        self._update_meeting_status(meeting_id)
         return meeting_id, run_id
-
-    # --- Internal helpers ------------------------------------------------
-    def _update_meeting_status(self, meeting_id: str) -> None:
-        conn = self._db.connect()
-        try:
-            row = conn.execute(
-                "SELECT COUNT(*) AS pending FROM tasks WHERE meeting_id = ? AND status = 'draft'",
-                (meeting_id,),
-            ).fetchone()
-            new_status = "pending" if row and row["pending"] else "processed"
-            conn.execute(
-                "UPDATE meetings SET status = ? WHERE id = ?",
-                (new_status, meeting_id),
-            )
-            conn.commit()
-        finally:
-            conn.close()
 
     def _get_or_create_user(self, conn: sqlite3.Connection, display_name: str) -> str:
         row = conn.execute(

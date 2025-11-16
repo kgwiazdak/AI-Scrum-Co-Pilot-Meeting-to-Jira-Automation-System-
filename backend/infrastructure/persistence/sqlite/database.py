@@ -46,7 +46,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             transcript TEXT,
             created_at TEXT NOT NULL,
             started_at TEXT,
-            status TEXT DEFAULT 'pending',
+            status TEXT DEFAULT 'queued',
             source_url TEXT,
             source_text TEXT
         )

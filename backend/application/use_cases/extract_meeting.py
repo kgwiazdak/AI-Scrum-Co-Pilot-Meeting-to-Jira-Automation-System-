@@ -5,8 +5,9 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-import anyio
+import asyncio
 
+from backend.domain.entities import MeetingImportJob
 from backend.domain.ports import (
     BlobStoragePort,
     ExtractionPort,
@@ -14,6 +15,7 @@ from backend.domain.ports import (
     TelemetryPort,
     TranscriptionPort,
 )
+from backend.domain.status import MeetingStatus
 from backend.schemas import ExtractionResult
 
 
@@ -61,6 +63,15 @@ class ExtractMeetingUseCase:
         else:
             self._audio_extensions = tuple()
 
+    async def process_job(self, job: MeetingImportJob) -> None:
+        await self(
+            title=job.title,
+            started_at=job.started_at,
+            blob_url=job.blob_url,
+            original_filename=job.original_filename,
+            meeting_id=job.meeting_id,
+        )
+
     async def __call__(
         self,
         *,
@@ -89,13 +100,27 @@ class ExtractMeetingUseCase:
             blob_url=blob_url,
         )
 
-        transcript_blob_uri = await self._persist_original_file(context)
-        transcript = await self._resolve_transcript(context)
-        result = await self._extract(transcript)
-        run_meeting_id, run_id = await self._store(context, transcript, result)
-        await self._log(run_meeting_id, run_id, transcript, result, transcript_blob_uri)
-        return result
+        if context.meeting_id:
+            self._meetings_repo.update_meeting_status(context.meeting_id, MeetingStatus.PROCESSING.value)
 
+        try:
+            transcript_blob_uri = await self._persist_original_file(context)
+            transcript = await self._resolve_transcript(context)
+            result = await self._extract(transcript)
+            run_meeting_id, run_id = await self._store(context, transcript, result)
+            await self._log(run_meeting_id, run_id, transcript, result, transcript_blob_uri)
+        except ExtractionError:
+            if context.meeting_id:
+                self._meetings_repo.update_meeting_status(context.meeting_id, MeetingStatus.FAILED.value)
+            raise
+        except Exception as exc:
+            if context.meeting_id:
+                self._meetings_repo.update_meeting_status(context.meeting_id, MeetingStatus.FAILED.value)
+            raise ExtractionError(f"Unexpected failure: {exc}", status_code=500) from exc
+        else:
+            if context.meeting_id:
+                self._meetings_repo.update_meeting_status(context.meeting_id, MeetingStatus.COMPLETED.value)
+            return result
     async def _persist_original_file(self, ctx: IngestedFile) -> str | None:
         if ctx.blob_url:
             return ctx.blob_url
@@ -116,7 +141,7 @@ class ExtractMeetingUseCase:
         transcription = self._transcription
         audio_exts = self._audio_extensions
         if transcription and audio_exts and name_lower.endswith(audio_exts):
-            return await anyio.to_thread.run_sync(transcription.transcribe, ctx.payload, name_lower)
+            return await asyncio.to_thread(transcription.transcribe, ctx.payload, name_lower)
         if audio_exts and name_lower.endswith(audio_exts):
             raise ExtractionError("Transcription service is not configured.", status_code=500)
 
@@ -124,7 +149,7 @@ class ExtractMeetingUseCase:
 
     async def _extract(self, transcript: str) -> ExtractionResult:
         try:
-            return await anyio.to_thread.run_sync(self._extractor.extract, transcript)
+            return await asyncio.to_thread(self._extractor.extract, transcript)
         except Exception as exc:  # pragma: no cover - defensive
             raise ExtractionError(f"Extraction failed: {exc}", status_code=500) from exc
 
@@ -142,10 +167,11 @@ class ExtractMeetingUseCase:
                 meeting_id=ctx.meeting_id,
                 title=ctx.title,
                 started_at=ctx.started_at,
+                blob_url=ctx.blob_url,
             )
 
         try:
-            return await anyio.to_thread.run_sync(_persist)
+            return await asyncio.to_thread(_persist)
         except Exception as exc:  # pragma: no cover - defensive
             raise ExtractionError(f"Failed to persist results: {exc}", status_code=500) from exc
 
@@ -171,4 +197,4 @@ class ExtractMeetingUseCase:
                 transcript_blob_uri=transcript_blob_uri,
             )
 
-        await anyio.to_thread.run_sync(_emit_telemetry)
+        await asyncio.to_thread(_emit_telemetry)

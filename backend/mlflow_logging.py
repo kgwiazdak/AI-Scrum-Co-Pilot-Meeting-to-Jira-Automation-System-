@@ -500,8 +500,7 @@ def _build_aggregate_metrics(
     metrics: dict[str, float] = {"tasks_extracted": float(tasks_extracted), "json_valid_rate": json_valid_rate}
     for phase in phase_data:
         for key, value in phase.metrics.items():
-            metrics.setdefault(key, 0.0)
-            metrics[key] = value
+            metrics[key] = metrics.get(key, 0.0) + float(value)
             if key in LATENCY_ACCUMULATION_KEYS:
                 total_latency += value
             if key.startswith("cost_usd") or key == "cost_usd":

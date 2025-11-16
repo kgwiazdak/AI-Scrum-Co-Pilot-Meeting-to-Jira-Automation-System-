@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -34,7 +34,7 @@ import {
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { MeetingUpdateSchema } from '../../schemas/meeting';
 import type { MeetingUpdateValues } from '../../schemas/meeting';
-import type { Meeting } from '../../types';
+import type { Meeting, MeetingStatus } from '../../types';
 import { formatDateTime, toDateTimeInput } from '../../utils/format';
 
 export const MeetingsList = () => {
@@ -71,6 +71,33 @@ export const MeetingsList = () => {
       setEditingMeeting(null);
     } catch (error) {
       enqueueSnackbar((error as Error).message, { variant: 'error' });
+    }
+  };
+
+  useEffect(() => {
+    const hasInFlight = meetings.some((meeting) =>
+      ['queued', 'processing'].includes(meeting.status),
+    );
+    if (!hasInFlight) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      refetch();
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [meetings, refetch]);
+
+  const getStatusColor = (status: MeetingStatus) => {
+    switch (status) {
+      case 'completed':
+        return 'success';
+      case 'processing':
+        return 'info';
+      case 'failed':
+        return 'error';
+      case 'queued':
+      default:
+        return 'default';
     }
   };
 
@@ -145,7 +172,7 @@ export const MeetingsList = () => {
                       <Chip
                         size="small"
                         label={meeting.status}
-                        color={meeting.status === 'processed' ? 'success' : 'default'}
+                        color={getStatusColor(meeting.status)}
                       />
                     </TableCell>
                     <TableCell>{meeting.draftTaskCount}</TableCell>

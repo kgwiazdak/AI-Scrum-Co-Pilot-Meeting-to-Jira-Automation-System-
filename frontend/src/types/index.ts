@@ -1,4 +1,4 @@
-export type MeetingStatus = 'pending' | 'processed';
+export type MeetingStatus = 'queued' | 'processing' | 'completed' | 'failed';
 
 export type TaskStatus = 'draft' | 'approved' | 'rejected';
 
