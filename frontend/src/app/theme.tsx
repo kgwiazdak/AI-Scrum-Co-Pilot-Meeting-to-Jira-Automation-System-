@@ -1,72 +1,10 @@
-import {
-  CssBaseline,
-  IconButton,
-  ThemeProvider,
-  createTheme,
-} from '@mui/material';
+import { CssBaseline, IconButton, ThemeProvider } from '@mui/material';
 import type { PaletteMode } from '@mui/material';
 import { Brightness4, Brightness7 } from '@mui/icons-material';
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { PropsWithChildren } from 'react';
-
-type ThemeModeContextValue = {
-  mode: PaletteMode;
-  toggleMode: () => void;
-};
-
-const ThemeModeContext = createContext<ThemeModeContextValue>({
-  mode: 'light',
-  toggleMode: () => undefined,
-});
-
-const buildTheme = (mode: PaletteMode) =>
-  createTheme({
-    palette: {
-      mode,
-      primary: {
-        main: '#0066ff',
-      },
-      background: {
-        default: mode === 'light' ? '#f4f6fb' : '#050708',
-        paper: mode === 'light' ? '#ffffff' : '#10151c',
-      },
-    },
-    shape: {
-      borderRadius: 12,
-    },
-    typography: {
-      fontFamily: "'Inter', 'IBM Plex Sans', system-ui, sans-serif",
-    },
-    components: {
-      MuiButton: {
-        defaultProps: {
-          variant: 'contained',
-        },
-        styleOverrides: {
-          root: {
-            textTransform: 'none',
-            boxShadow: 'none',
-          },
-        },
-      },
-    },
-  });
-
-const getPreferredMode = (): PaletteMode => {
-  if (typeof window === 'undefined' || !window.matchMedia) {
-    return 'light';
-  }
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light';
-};
+import { buildTheme, getPreferredMode } from './themeConfig';
+import { ThemeModeContext, useThemeMode } from './themeContext';
 
 export const ThemeModeProvider = ({ children }: PropsWithChildren) => {
   const [mode, setMode] = useState<PaletteMode>(() => {
@@ -89,7 +27,6 @@ export const ThemeModeProvider = ({ children }: PropsWithChildren) => {
   }, []);
 
   const theme = useMemo(() => buildTheme(mode), [mode]);
-
   const value = useMemo(() => ({ mode, toggleMode }), [mode, toggleMode]);
 
   return (
@@ -102,8 +39,6 @@ export const ThemeModeProvider = ({ children }: PropsWithChildren) => {
   );
 };
 
-export const useThemeMode = () => useContext(ThemeModeContext);
-
 export const ThemeToggleButton = () => {
   const { mode, toggleMode } = useThemeMode();
   return (
@@ -113,7 +48,11 @@ export const ThemeToggleButton = () => {
       onClick={toggleMode}
       size="small"
     >
-      {mode === 'dark' ? <Brightness7 fontSize="small" /> : <Brightness4 fontSize="small" />}
+      {mode === 'dark' ? (
+        <Brightness7 fontSize="small" />
+      ) : (
+        <Brightness4 fontSize="small" />
+      )}
     </IconButton>
   );
 };
