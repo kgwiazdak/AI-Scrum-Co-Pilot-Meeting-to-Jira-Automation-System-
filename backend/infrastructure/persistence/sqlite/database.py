@@ -77,6 +77,9 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             labels TEXT,
             status TEXT NOT NULL DEFAULT 'draft',
             source_quote TEXT,
+            jira_issue_key TEXT,
+            jira_issue_url TEXT,
+            pushed_to_jira_at TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             FOREIGN KEY(meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
@@ -88,8 +91,24 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS users(
             id TEXT PRIMARY KEY,
             display_name TEXT NOT NULL,
-            email TEXT
+            email TEXT,
+            jira_account_id TEXT
         )
         """
     )
     conn.commit()
+    _ensure_column(conn, "tasks", "jira_issue_key", "TEXT")
+    _ensure_column(conn, "tasks", "jira_issue_url", "TEXT")
+    _ensure_column(conn, "tasks", "pushed_to_jira_at", "TEXT")
+    _ensure_column(conn, "users", "jira_account_id", "TEXT")
+    conn.commit()
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    cur = conn.cursor()
+    existing = {
+        row["name"]
+        for row in cur.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in existing:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")

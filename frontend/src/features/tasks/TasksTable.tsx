@@ -11,6 +11,7 @@ import type {
 import {
   Autocomplete,
   Chip,
+  Link,
   MenuItem,
   Stack,
   TextField,
@@ -206,6 +207,30 @@ export const TasksTable = ({
           }
         />
       ),
+    },
+    {
+      field: 'jiraIssueKey',
+      headerName: 'Jira Issue',
+      width: 140,
+      sortable: false,
+      renderCell: (params) =>
+        params.value ? (
+          params.row.jiraIssueUrl ? (
+            <Link
+              href={params.row.jiraIssueUrl ?? undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {params.value}
+            </Link>
+          ) : (
+            <Typography variant="body2">{params.value}</Typography>
+          )
+        ) : (
+          <Typography variant="body2" color="text.secondary">
+            —
+          </Typography>
+        ),
     },
   ];
 

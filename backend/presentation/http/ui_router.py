@@ -9,9 +9,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.application.commands.meeting_import import MeetingImportPayload, SubmitMeetingImportCommand
+from backend.application.services.push_to_jira import PushTasksToJiraService
 from backend.infrastructure.persistence.sqlite import SqliteMeetingsRepository, TASK_STATUSES
 from backend.infrastructure.storage.blob import BlobStorageConfigError, BlobStorageService
-from backend.presentation.http.dependencies import blob_storage_service, data_repository, submit_import_command
+from backend.infrastructure.jira import JiraClient, JiraClientError
+from backend.presentation.http.dependencies import (
+    blob_storage_service,
+    data_repository,
+    jira_client as jira_dependency,
+    submit_import_command,
+)
 
 router = APIRouter(prefix="/api", tags=["ui"])
 logger = logging.getLogger(__name__)
@@ -148,9 +155,17 @@ def update_task(task_id: str, payload: TaskUpdate, repo: SqliteMeetingsRepositor
 
 
 @router.post("/tasks/bulk-approve")
-def bulk_approve_tasks(payload: BulkAction, repo: SqliteMeetingsRepository = Depends(_repo)):
-    repo.bulk_update_status(payload.ids, "approved")
-    return {"updated": len(payload.ids)}
+def bulk_approve_tasks(
+    payload: BulkAction,
+    repo: SqliteMeetingsRepository = Depends(_repo),
+    jira: JiraClient = Depends(jira_dependency),
+):
+    service = PushTasksToJiraService(repo=repo, jira_client=jira)
+    try:
+        result = service.push(payload.ids)
+    except JiraClientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"updated": result.pushed, "pushed": result.pushed, "skipped": result.skipped}
 
 
 @router.post("/tasks/bulk-reject")

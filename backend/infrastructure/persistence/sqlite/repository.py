@@ -249,17 +249,62 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
             conn.close()
         return updated_count
 
+    def get_tasks_by_ids(self, ids: Iterable[str]) -> list[dict[str, Any]]:
+        task_ids = [task_id for task_id in ids if task_id]
+        if not task_ids:
+            return []
+        placeholders = ",".join("?" for _ in task_ids)
+        conn = self._db.connect()
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT
+                    t.*,
+                    u.jira_account_id AS assignee_jira_account_id
+                FROM tasks t
+                LEFT JOIN users u ON u.id = t.assignee_id
+                WHERE t.id IN ({placeholders})
+                """,
+                task_ids,
+            ).fetchall()
+            return [mappers.serialize_task_row(row) for row in rows]
+        finally:
+            conn.close()
+
+    def mark_task_pushed_to_jira(self, task_id: str, *, issue_key: str, issue_url: str | None) -> None:
+        now = utc_now_iso()
+        conn = self._db.connect()
+        try:
+            cur = conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'approved',
+                    jira_issue_key = ?,
+                    jira_issue_url = ?,
+                    pushed_to_jira_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (issue_key, issue_url, now, now, task_id),
+            )
+            if cur.rowcount == 0:
+                raise ValueError("Task not found")
+            conn.commit()
+        finally:
+            conn.close()
+
     def list_users(self) -> list[dict[str, Any]]:
         conn = self._db.connect()
         try:
             rows = conn.execute(
-                "SELECT id, display_name, email FROM users ORDER BY display_name"
+                "SELECT id, display_name, email, jira_account_id FROM users ORDER BY display_name"
             ).fetchall()
             return [
                 {
                     "id": row["id"],
                     "displayName": row["display_name"],
                     "email": row["email"],
+                    "jiraAccountId": row["jira_account_id"],
                 }
                 for row in rows
             ]

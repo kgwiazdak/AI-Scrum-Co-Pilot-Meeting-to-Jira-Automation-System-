@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from fastapi import HTTPException
+
 from backend.application.commands.meeting_import import SubmitMeetingImportCommand
 from backend.application.use_cases.extract_meeting import ExtractMeetingUseCase
 from backend.domain.ports import MeetingImportQueuePort
+from backend.infrastructure.jira import JiraClient
 from backend.infrastructure.persistence.sqlite import SqliteMeetingsRepository
 from backend.infrastructure.storage.blob import BlobStorageService
 from backend.container import (
     get_blob_storage,
     get_extract_use_case,
+    get_jira_client,
     get_meeting_queue,
     get_meetings_repository,
 )
@@ -34,3 +38,10 @@ def meeting_queue() -> MeetingImportQueuePort:
 
 def submit_import_command() -> SubmitMeetingImportCommand:
     return SubmitMeetingImportCommand(repository=get_meetings_repository(), queue=get_meeting_queue())
+
+
+def jira_client() -> JiraClient:
+    client = get_jira_client()
+    if client is None:
+        raise HTTPException(status_code=503, detail="Jira integration is not configured.")
+    return client

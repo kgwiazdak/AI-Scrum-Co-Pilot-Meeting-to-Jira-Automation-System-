@@ -1,96 +1,135 @@
 # Sprint Planning Copilot
 
-AI-driven assistant that ingests meeting recordings or transcripts, extracts structured Jira-ready tasks, and logs ML/telemetry data for later auditing. The system is event-driven: uploads happen straight to blob storage, the API enqueues work, and a worker processes meetings asynchronously.
-
-## High-Level Architecture
+AI assistant that turns raw meeting recordings into Jira-ready backlog items. The system ingests files uploaded through the web UI, stores the originals in Azure Blob Storage, processes them asynchronously with FastAPI workers, persists the structured tasks in SQLite, logs the whole run to MLflow, and finally lets reviewers approve tasks into Jira with a single click.
 
 ```
-+-------------+      +----------------+      +--------------------+      +------------------+
-| Frontend    | ---> | FastAPI API    | ---> | Async Queue/Worker | ---> | Persistence/MLflow|
-| (React/Vite)|      | (uploads/import)|      | (ExtractMeeting)   |      | SQLite + MLflow   |
-+-------------+      +----------------+      +--------------------+      +------------------+
-      |                        |                       |                        |
-  SAS upload              Store stub            Download from blob        Write tasks & log runs
-  to Azure Blob           enqueue job           transcribe/extract        return status/tag data
+Browser ──upload──▶ Azure Blob
+            │
+            ▼
+        FastAPI API ──queue job──▶ Async worker
+            │                        │
+            │                        ├─▶ Azure Speech / LLM extraction
+            │                        └─▶ SQLite + MLflow logging
+            │
+            └──REST──▶ React/Vite UI (meetings + review)
 ```
 
-### Key Components
+## Highlights
 
-- **Frontend (`frontend/`)** – React + Vite UI. Users pick meeting metadata, upload files (via SAS URL), and watch statuses (`queued`, `processing`, `completed`, `failed`). React Query handles polling.
-- **API (`backend/presentation/http/ui_router.py`)** – Issues SAS upload tokens, accepts import requests, exposes meeting/task CRUD. Imports call `SubmitMeetingImportCommand` and immediately return 202.
-- **Queue & Worker** – `BackgroundMeetingImportQueue` (asyncio) plus `ExtractMeetingUseCase`. In production you can swap for Redis/Azure queue.
-- **Domain & Application** – Ports define contracts (`backend/domain/ports.py`, `backend/domain/status.py`). Commands/use cases orchestrate ingestion (`backend/application/commands/meeting_import.py`, `backend/application/use_cases/extract_meeting.py`).
-- **Infrastructure** – SQLite repository, blob storage adapter, transcription/LLM adapters, MLflow logger.
+- **Event-driven ingestion** – uploads go straight to blob storage, the API only stores a stub and enqueues background work.
+- **Automatic transcription & extraction** – Azure Conversation transcription plus an LLM prompt convert meetings into normalized tasks.
+- **Live status dashboards** – meetings view auto-refreshes while jobs are queued/processing; the Review & Approve tab polls drafts every 5 s.
+- **One-click Jira pushes** – approving tasks creates properly formatted Jira issues (labels are sanitized automatically) and records the issue key/URL.
+- **Telemetry by default** – every import logs transcripts, prompts, metrics, and artifacts to MLflow for auditing.
 
-## Workflow Example
+## Repository Tour
 
-1. **Generate SAS** – UI calls `POST /api/uploads/blob` with filename. API returns `uploadUrl`, `blobUrl`, and `meetingId`.
-2. **Upload File** – Browser performs `PUT` to Azure Blob Storage using `uploadUrl`. (Ensure Azure Storage CORS allows `http://localhost:4173`).
-3. **Import Meeting** – UI sends `POST /api/meetings/import` with `{ title, startedAt, blobUrl, meetingId, originalFilename }`. API stores a stub row (`queued`) and enqueues the job.
-4. **Background Processing** – Worker downloads the blob, runs transcription/LLM extraction, stores transcript/tasks, and logs MLflow metrics/artifacts. Meeting status transitions `queued → processing → completed` (or `failed` on error).
-5. **Monitoring** – Frontend polls `/api/meetings` every few seconds when any meeting is queued/processing; tasks become available once status is completed.
-
-## Important Files
-
-| Path | Role |
+| Path | Description |
 | --- | --- |
-| `backend/presentation/http/ui_router.py` | All API endpoints (uploads, import, meetings/tasks). |
-| `backend/application/commands/meeting_import.py` | Submission command: persist stub + enqueue queue job. |
-| `backend/application/use_cases/extract_meeting.py` | Worker logic: download blob, transcribe, extract, persist, log MLflow. |
-| `backend/domain/ports.py` | Contracts for blob storage, queue, repository, telemetry. |
-| `backend/domain/status.py` | Enum for meeting statuses shared with frontend. |
-| `backend/infrastructure/persistence/sqlite/repository.py` | SQLite repository, meeting/task CRUD, status updates. |
-| `backend/mlflow_logging.py` | MLflow integration: metrics, artifacts, summaries. |
-| `frontend/src/api/hooks.ts` | React Query hooks for SAS upload and meeting import. |
-| `frontend/src/features/meetings/MeetingsList.tsx` | Meeting list view, status chips, auto-polling. |
+| `backend/presentation/http/ui_router.py` | FastAPI router exposing uploads, meetings, tasks, review actions, and Jira pushes. |
+| `backend/application/...` | Commands/use-cases/services that orchestrate meeting imports and Jira pushes. |
+| `backend/infrastructure/...` | SQLite repository, blob storage adapter, queue, telemetry, Azure Speech, LLM, and Jira client. |
+| `frontend/src/app` & `frontend/src/features` | React/Vite UI (meetings table, meeting detail tasks, review queue). |
+| `frontend/src/api` | Axios + React Query hooks (auto polling, optimistic updates, Jira mutations). |
+| `backend/tests` | Pytest coverage for ingestion, MLflow telemetry, and Jira push logic. |
 
-## Running Locally
+## Requirements
 
-### Prerequisites
 - Python 3.11+
 - Poetry 2.x
-- FFmpeg (if using audio transcription)
 - Node.js 18+
-- Azure Blob Storage account (for SAS uploads)
+- FFmpeg (for audio transcription)
+- Azure Blob Storage account (SAS uploads)
+- Azure Speech + OpenAI (or set `MOCK_LLM=1` for deterministic dev)
+- Jira Cloud project & API token
+- Optional: Docker + Docker Compose for the all-in-one stack
 
-### Backend Setup
+## Configuration
+
+Create `.env` (backend) and `.env.development` (frontend). Key variables:
+
+| Purpose | Variables |
+| --- | --- |
+| Azure Blob uploads | `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER_NAME` |
+| Azure Speech | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, `AZURE_SPEECH_LANGUAGE`, `TRANSCRIBER_SAMPLE_RATE` |
+| LLM extraction | `LLM_PROVIDER`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`, `OPENAI_MODEL`, `LLM_TEMPERATURE`, `MOCK_LLM=1` (local stub) |
+| Database | `DB_URL` (defaults to `sqlite:///./app.db`) |
+| Jira push | `JIRA_BASE_URL` (e.g. `https://importantwork.atlassian.net`), `JIRA_PROJECT_KEY` (e.g. `SCRUM`), `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_STORY_POINTS_FIELD` (custom field id, optional) |
+| Telemetry | `MLFLOW_TRACKING_URI`, `MLFLOW_EXPERIMENT_NAME` |
+| Frontend | `.env.development` → `VITE_API_URL=http://localhost:8000/api` |
+
+CORS reminder: allow `http://localhost:4173` for `PUT,OPTIONS` in your Azure Blob container so browser uploads succeed.
+
+## Development Setup
+
+### Backend
+
 ```bash
 poetry install --with dev
-cp .env.sample .env  # configure Azure storage, MLflow, etc.
+cp .env.sample .env  # then edit values described above
 poetry run uvicorn backend.app:app --reload
 ```
-Key env vars:
-- `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER_NAME`
-- `MLFLOW_TRACKING_URI`, `MLFLOW_EXPERIMENT_NAME`
-- `MOCK_LLM=1` for deterministic extraction during local dev
 
-### Frontend Setup
+### Frontend
+
 ```bash
 cd frontend
 npm install
+cp .env.development.sample .env.development  # ensure VITE_API_URL is set
 npm run dev
 ```
-Ensure `.env.development` contains `VITE_API_URL=http://localhost:8000/api`.
 
-### Docker Compose
-```
+Navigate to `http://localhost:4173`. The UI talks to FastAPI via the configured API URL and polls for meetings/drafts automatically.
+
+## Docker Compose
+
+Run the full stack (API, MLflow, Nginx-served frontend):
+
+```bash
 docker compose up --build
 ```
-This starts API (8000), MLflow (5000), and Nginx-served frontend (4173). Frontend talks to API via `/api`.
+
+Ports: API `8000`, MLflow `5000`, frontend `4173`. The frontend container proxies API calls to `/api`.
+
+## Typical Workflow
+
+1. **Generate SAS** – UI `POST /api/uploads/blob` returns `uploadUrl`, `blobUrl`, `meetingId`.
+2. **Upload File** – browser `PUT` directly to Azure Blob Storage using the SAS URL.
+3. **Import Meeting** – UI `POST /api/meetings/import` with metadata + `blobUrl`. API stores a `queued` stub and enqueues a worker job.
+4. **Background processing** – worker downloads the blob, runs transcription + LLM extraction, persists transcript/tasks, and logs the run to MLflow. Meeting status transitions `queued → processing → completed/failed`.
+5. **Review & approve** – reviewers use the Meetings detail page or the Review tab to edit drafts inline. Approving pushes to Jira and records `jiraIssueKey/url` on each task.
+
+## Jira Integration Notes
+
+- Approvals call `POST /api/tasks/bulk-approve` which in turn uses `PushTasksToJiraService`.
+- Labels are automatically sanitized (lowercase, spaces/invalid characters → `-`, empty labels dropped) to satisfy Jira’s restrictions.
+- If Jira rejects a payload the API returns HTTP 502 with the Jira message so the UI can display the error.
+
+## Telemetry & Storage
+
+- SQLite lives at `app.db` by default; schema migrations are handled automatically at startup.
+- MLflow artifacts land under `data/mlflow/artifacts/…`. Keep the MLflow service running (docker compose does this automatically) to inspect past runs.
 
 ## Testing
 
-Run all backend unit tests (including queue submission + MLflow metrics) via:
-```
+```bash
 poetry run pytest backend/tests
 ```
 
-## Tips for New Contributors
+This covers ingestion orchestration, MLflow logging, and the Jira push service. Add frontend/unit tests under `frontend/tests/` (Playwright smoke test scaffold exists) before submitting significant UI changes.
 
-1. **Follow the flow** – Start at `frontend/src/api/hooks.ts` → `ui_router.py` → `meeting_import.py` → `extract_meeting.py`. Understanding this path makes debugging easy.
-2. **Use statuses** – Meeting cards depend on `MeetingStatus` values. When adding features, update `backend/domain/status.py` and `frontend/src/types/index.ts` together.
-3. **Queue swaps** – `BackgroundMeetingImportQueue` is intentionally simple. To use Redis/Azure queue, implement `MeetingImportQueuePort.enqueue` and wire it in `backend/container.py`.
-4. **Telemetry** – MLflow artifacts live in `data/mlflow/artifacts`. Ensure MLflow service is running; failures usually come from missing env vars.
-5. **CORS for blobs** – Configure Azure Storage CORS to allow `http://localhost:4173` (methods `PUT,OPTIONS`). Without it uploads fail.
+## Troubleshooting
 
-This README replaces older documentation; consult `architecture_plan.md` for ongoing refactors.
+- **Uploads fail from browser** – ensure Azure Storage CORS allows your frontend origin.
+- **Duplicate column logs** – harmless; the SQLite auto-migration ensures Jira columns exist on startup.
+- **Jira rejects approvals** – check the API response; usually caused by missing required fields or invalid custom field/label values.
+- **Long-running jobs** – the review + meeting views poll; you can also tail the worker logs for detailed telemetry.
+
+## Contributing
+
+1. Create a feature branch.
+2. Make sure `poetry run pytest` passes.
+3. Keep frontend/backend types in sync (`backend/domain/status.py` ↔ `frontend/src/types/index.ts`).
+4. Update this README if you add new configuration knobs or workflow steps.
+
+Happy planning! 🎯

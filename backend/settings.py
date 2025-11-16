@@ -30,11 +30,20 @@ class DatabaseSettings(BaseModel):
     url: str = os.getenv("DB_URL", "sqlite:///./app.db")
 
 
+class JiraSettings(BaseModel):
+    base_url: str | None = None
+    email: str | None = None
+    api_token: str | None = None
+    project_key: str | None = None
+    story_points_field: str | None = None
+
+
 class AppConfig(BaseModel):
     blob_storage: BlobStorageSettings = BlobStorageSettings()
     azure_speech: AzureSpeechSettings = AzureSpeechSettings()
     llm: LLMSettings = LLMSettings()
     database: DatabaseSettings = DatabaseSettings()
+    jira: JiraSettings = JiraSettings()
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -59,6 +68,13 @@ class AppConfig(BaseModel):
             ),
             database=DatabaseSettings(
                 url=os.getenv("DB_URL", "sqlite:///./app.db"),
+            ),
+            jira=JiraSettings(
+                base_url=os.getenv("JIRA_BASE_URL"),
+                email=os.getenv("JIRA_EMAIL"),
+                api_token=os.getenv("JIRA_API_TOKEN"),
+                project_key=os.getenv("JIRA_PROJECT_KEY"),
+                story_points_field=os.getenv("JIRA_STORY_POINTS_FIELD"),
             ),
         )
 

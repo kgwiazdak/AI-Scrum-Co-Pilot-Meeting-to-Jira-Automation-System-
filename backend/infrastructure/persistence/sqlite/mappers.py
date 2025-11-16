@@ -18,6 +18,12 @@ def serialize_meeting_row(row: sqlite3.Row) -> dict[str, Any]:
 
 def serialize_task_row(row: sqlite3.Row) -> dict[str, Any]:
     labels = json.loads(row["labels"]) if row["labels"] else []
+    keys = set(row.keys()) if hasattr(row, "keys") else set()
+    assignee_account = None
+    if "assignee_jira_account_id" in keys:
+        assignee_account = row["assignee_jira_account_id"]
+    elif "jira_account_id" in keys:
+        assignee_account = row["jira_account_id"]
     return {
         "id": row["id"],
         "meetingId": row["meeting_id"],
@@ -27,7 +33,11 @@ def serialize_task_row(row: sqlite3.Row) -> dict[str, Any]:
         "priority": row["priority"],
         "storyPoints": row["story_points"],
         "assigneeId": row["assignee_id"],
+        "assigneeAccountId": assignee_account,
         "labels": labels,
         "status": row["status"],
         "sourceQuote": row["source_quote"],
+        "jiraIssueKey": row["jira_issue_key"] if "jira_issue_key" in keys else None,
+        "jiraIssueUrl": row["jira_issue_url"] if "jira_issue_url" in keys else None,
+        "pushedToJiraAt": row["pushed_to_jira_at"] if "pushed_to_jira_at" in keys else None,
     }

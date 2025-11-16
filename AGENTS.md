@@ -1,32 +1,96 @@
-# Repository Guidelines
+# Sprint Planning Copilot
 
-## Project Structure & Module Organization
-- `backend/` – FastAPI service (app, routers, domain logic), with SQLite adapters in `backend/db` and scripts under `backend/scripts`.
-- `frontend/` – React + Vite UI (providers, features, API hooks, Playwright tests in `frontend/tests`); build artefacts emit to `frontend/dist/`.
-- `data/` – MLflow storage plus seed audio artifacts; `app.db` (SQLite) lives in repo root.
-- `docker-compose.yml` orchestrates API, MLflow, and the static frontend; `frontend/Dockerfile` serves optimized builds via Nginx.
+AI-driven assistant that ingests meeting recordings or transcripts, extracts structured Jira-ready tasks, and logs ML/telemetry data for later auditing. The system is event-driven: uploads happen straight to blob storage, the API enqueues work, and a worker processes meetings asynchronously.
 
-## Build, Test, and Development Commands
-- Backend install & dev server: `poetry install` then `poetry run uvicorn backend.app:app --reload`.
-- Frontend dev: `cd frontend && npm install && npm run dev` (connects to `VITE_API_URL`).
-- Production preview: `npm run build` followed by `npm run preview`.
-- Linting/formatting: `npm run lint` (ESLint + TypeScript) for the UI; backend code should follow standard PEP 8/black-style formatting even though no helper script is bundled.
-- End-to-end verification: `cd frontend && npm run test:e2e` (builds UI, boots FastAPI via Poetry, and runs Playwright).
+## High-Level Architecture
 
-## Coding Style & Naming Conventions
-- Python: 4-space indentation, type hints on public functions, FastAPI dependency-injection patterns, and Pydantic models in `backend/schemas.py`. Keep DB adapters pure and prefer repository classes (`SqliteMeetingsRepository`).
-- TypeScript/React: Functional components, hooks-first architecture, co-locate schemas under `frontend/src/schemas`. Follow existing naming (`MeetingTasksPage`, `useReviewTasks`). Run ESLint before submitting.
-- Configuration values read from environment (e.g., `DB_URL`, `VITE_API_URL`); never hardcode secrets.
+```
++-------------+      +----------------+      +--------------------+      +------------------+
+| Frontend    | ---> | FastAPI API    | ---> | Async Queue/Worker | ---> | Persistence/MLflow|
+| (React/Vite)|      | (uploads/import)|      | (ExtractMeeting)   |      | SQLite + MLflow   |
++-------------+      +----------------+      +--------------------+      +------------------+
+      |                        |                       |                        |
+  SAS upload              Store stub            Download from blob        Write tasks & log runs
+  to Azure Blob           enqueue job           transcribe/extract        return status/tag data
+```
 
-## Testing Guidelines
-- Python unit tests live in `backend/tests/`; run via `poetry run pytest`.
-- Frontend integration tests live in `frontend/tests/` and use Playwright (`npm run test:e2e`). Tests seed data through API calls, so ensure SQLite is initialized (call `SqliteMeetingsRepository("sqlite:///./app.db")` if the file was deleted).
-- Name tests descriptively (e.g., `test_list_meetings_returns_seeded_data`) and keep fixtures deterministic.
+### Key Components
 
-## Commit & Pull Request Guidelines
-- Git history favors short, descriptive subjects (e.g., “MlFlow advanced”, “Front not working”). Keep subjects ≤50 chars, imperative mood when possible, and elaborate in the body if context is needed.
-- Pull requests should summarize scope, list backend/frontend impacts, describe testing (`npm run test:e2e`, `poetry run pytest`), and attach screenshots/GIFs for UI-visible changes. Link tracking tickets or issues when applicable.
+- **Frontend (`frontend/`)** – React + Vite UI. Users pick meeting metadata, upload files (via SAS URL), and watch statuses (`queued`, `processing`, `completed`, `failed`). React Query handles polling.
+- **API (`backend/presentation/http/ui_router.py`)** – Issues SAS upload tokens, accepts import requests, exposes meeting/task CRUD. Imports call `SubmitMeetingImportCommand` and immediately return 202.
+- **Queue & Worker** – `BackgroundMeetingImportQueue` (asyncio) plus `ExtractMeetingUseCase`. In production you can swap for Redis/Azure queue.
+- **Domain & Application** – Ports define contracts (`backend/domain/ports.py`, `backend/domain/status.py`). Commands/use cases orchestrate ingestion (`backend/application/commands/meeting_import.py`, `backend/application/use_cases/extract_meeting.py`).
+- **Infrastructure** – SQLite repository, blob storage adapter, transcription/LLM adapters, MLflow logger.
 
-## Security & Configuration Tips
-- Use `.env` (or `.env.development` in `frontend/`) to supply `DB_URL`, `AZURE_*`, and `VITE_API_URL`; never commit real credentials.
-- When swapping SQLite for Postgres, update `DB_URL` and ensure migrations run before hitting `/api/*` endpoints.
+## Workflow Example
+
+1. **Generate SAS** – UI calls `POST /api/uploads/blob` with filename. API returns `uploadUrl`, `blobUrl`, and `meetingId`.
+2. **Upload File** – Browser performs `PUT` to Azure Blob Storage using `uploadUrl`. (Ensure Azure Storage CORS allows `http://localhost:4173`).
+3. **Import Meeting** – UI sends `POST /api/meetings/import` with `{ title, startedAt, blobUrl, meetingId, originalFilename }`. API stores a stub row (`queued`) and enqueues the job.
+4. **Background Processing** – Worker downloads the blob, runs transcription/LLM extraction, stores transcript/tasks, and logs MLflow metrics/artifacts. Meeting status transitions `queued → processing → completed` (or `failed` on error).
+5. **Monitoring** – Frontend polls `/api/meetings` every few seconds when any meeting is queued/processing; tasks become available once status is completed.
+
+## Important Files
+
+| Path | Role |
+| --- | --- |
+| `backend/presentation/http/ui_router.py` | All API endpoints (uploads, import, meetings/tasks). |
+| `backend/application/commands/meeting_import.py` | Submission command: persist stub + enqueue queue job. |
+| `backend/application/use_cases/extract_meeting.py` | Worker logic: download blob, transcribe, extract, persist, log MLflow. |
+| `backend/domain/ports.py` | Contracts for blob storage, queue, repository, telemetry. |
+| `backend/domain/status.py` | Enum for meeting statuses shared with frontend. |
+| `backend/infrastructure/persistence/sqlite/repository.py` | SQLite repository, meeting/task CRUD, status updates. |
+| `backend/mlflow_logging.py` | MLflow integration: metrics, artifacts, summaries. |
+| `frontend/src/api/hooks.ts` | React Query hooks for SAS upload and meeting import. |
+| `frontend/src/features/meetings/MeetingsList.tsx` | Meeting list view, status chips, auto-polling. |
+
+## Running Locally
+
+### Prerequisites
+- Python 3.11+
+- Poetry 2.x
+- FFmpeg (if using audio transcription)
+- Node.js 18+
+- Azure Blob Storage account (for SAS uploads)
+
+### Backend Setup
+```bash
+poetry install --with dev
+cp .env.sample .env  # configure Azure storage, MLflow, etc.
+poetry run uvicorn backend.app:app --reload
+```
+Key env vars:
+- `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER_NAME`
+- `MLFLOW_TRACKING_URI`, `MLFLOW_EXPERIMENT_NAME`
+- `MOCK_LLM=1` for deterministic extraction during local dev
+
+### Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Ensure `.env.development` contains `VITE_API_URL=http://localhost:8000/api`.
+
+### Docker Compose
+```
+docker compose up --build
+```
+This starts API (8000), MLflow (5000), and Nginx-served frontend (4173). Frontend talks to API via `/api`.
+
+## Testing
+
+Run all backend unit tests (including queue submission + MLflow metrics) via:
+```
+poetry run pytest backend/tests
+```
+
+## Tips for New Contributors
+
+1. **Follow the flow** – Start at `frontend/src/api/hooks.ts` → `ui_router.py` → `meeting_import.py` → `extract_meeting.py`. Understanding this path makes debugging easy.
+2. **Use statuses** – Meeting cards depend on `MeetingStatus` values. When adding features, update `backend/domain/status.py` and `frontend/src/types/index.ts` together.
+3. **Queue swaps** – `BackgroundMeetingImportQueue` is intentionally simple. To use Redis/Azure queue, implement `MeetingImportQueuePort.enqueue` and wire it in `backend/container.py`.
+4. **Telemetry** – MLflow artifacts live in `data/mlflow/artifacts`. Ensure MLflow service is running; failures usually come from missing env vars.
+5. **CORS for blobs** – Configure Azure Storage CORS to allow `http://localhost:4173` (methods `PUT,OPTIONS`). Without it uploads fail.
+
+This README replaces older documentation; consult `architecture_plan.md` for ongoing refactors.

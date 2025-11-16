@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from backend.application.use_cases.extract_meeting import ExtractMeetingUseCase
+from backend.infrastructure.jira import JiraClient
 from backend.infrastructure.llm.task_extractor import LLMExtractor
 from backend.infrastructure.persistence.sqlite import SqliteMeetingsRepository
 from backend.infrastructure.queue.background import BackgroundMeetingImportQueue
@@ -76,3 +77,20 @@ def get_extract_use_case() -> ExtractMeetingUseCase:
 def get_meeting_queue() -> BackgroundMeetingImportQueue:
     use_case = get_extract_use_case()
     return BackgroundMeetingImportQueue(use_case.process_job)
+
+
+@lru_cache(maxsize=1)
+def get_jira_client() -> JiraClient | None:
+    cfg = get_settings().jira
+    if not cfg.base_url or not cfg.email or not cfg.api_token or not cfg.project_key:
+        return None
+    try:
+        return JiraClient(
+            base_url=cfg.base_url,
+            email=cfg.email,
+            api_token=cfg.api_token,
+            project_key=cfg.project_key,
+            story_points_field=cfg.story_points_field,
+        )
+    except ValueError:
+        return None

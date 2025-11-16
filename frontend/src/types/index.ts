@@ -23,9 +23,13 @@ export interface Task {
   priority: Priority;
   storyPoints?: number;
   assigneeId?: string;
+  assigneeAccountId?: string;
   labels: string[];
   status: TaskStatus;
   sourceQuote?: string;
+  jiraIssueKey?: string | null;
+  jiraIssueUrl?: string | null;
+  pushedToJiraAt?: string | null;
 }
 
 export interface User {
