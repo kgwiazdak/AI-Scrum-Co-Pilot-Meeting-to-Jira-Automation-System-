@@ -50,7 +50,7 @@ Create `.env` (backend) and `.env.development` (frontend). Key variables:
 
 | Purpose | Variables |
 | --- | --- |
-| Azure Blob uploads | `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER_NAME` |
+| Azure Blob uploads | `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER_NAME`, `AZURE_STORAGE_CONTAINER_WORKERS` (intro voices) |
 | Azure Speech | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, `AZURE_SPEECH_LANGUAGE`, `TRANSCRIBER_SAMPLE_RATE` |
 | LLM extraction | `LLM_PROVIDER`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`, `OPENAI_MODEL`, `LLM_TEMPERATURE`, `MOCK_LLM=1` (local stub) |
 | Database | `DB_URL` (defaults to `sqlite:///./app.db`) |
@@ -116,7 +116,13 @@ Ports: API `8000`, MLflow `5000`, frontend `4173`. The frontend container proxie
 poetry run pytest backend/tests
 ```
 
-This covers ingestion orchestration, MLflow logging, and the Jira push service. Add frontend/unit tests under `frontend/tests/` (Playwright smoke test scaffold exists) before submitting significant UI changes.
+This exercises ingestion orchestration, MLflow logging, Jira pushing, and the voice-profile flow. Add frontend/unit tests under `frontend/tests/` (Playwright smoke scaffold exists) before shipping major UI changes.
+
+### Voice Samples & Diarization
+
+- Store intro clips in the workers container (blobs like `intro_Adrian_Puchacki.mp3`). On startup the backend syncs missing files into `data/voices/` and creates/updates matching user records.
+- During transcription, the Azure Conversation transcriber prepends these intros so diarized speakers can be matched to real names. Tasks from matched speakers arrive pre-assigned in the UI; unknown voices stay unassigned until you add a new intro sample.
+- When a teammate joins, drop their intro clip in the workers container, restart the backend to sync, and confirm they show up under `/api/users`. As soon as their Jira account is known (either prefilled or auto-looked-up during approval), tasks will push into Jira under their name.
 
 ## Troubleshooting
 

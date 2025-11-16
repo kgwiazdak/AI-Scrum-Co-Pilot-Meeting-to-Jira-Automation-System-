@@ -36,7 +36,7 @@ class AzureConversationTranscriber:
         self._language = language
         self._sample_rate = sample_rate
         self._channels = channels
-        self._intro_dir = Path(intro_audio_dir or os.getenv("INTRO_AUDIO_DIR", "data"))
+        self._intro_dir = Path(intro_audio_dir or os.getenv("INTRO_AUDIO_DIR", "data/voices"))
         self._intro_pattern = intro_pattern or os.getenv("INTRO_AUDIO_PATTERN", "intro_*.mp3")
         self._intro_silence_ms = intro_silence_ms or int(os.getenv("INTRO_SILENCE_MS", "300"))
 
@@ -71,7 +71,7 @@ class AzureConversationTranscriber:
         for path in sorted(self._intro_dir.glob(self._intro_pattern)):
             if not path.is_file():
                 continue
-            role = path.stem.split("_", 1)[-1].upper()
+            role = self._role_from_filename(path)
             wav_bytes = normalizer.convert_to_standard_wav(
                 path.read_bytes(), sample_rate=sample_rate, channels=channels
             )
@@ -80,6 +80,23 @@ class AzureConversationTranscriber:
                 raise ValueError(f"Intro sample {path.name} has incompatible audio format")
             chunks.append({"role": role, "frames": frames, "num_frames": num_frames})
         return chunks
+
+    @staticmethod
+    def _role_from_filename(path: Path) -> str:
+        stem = path.stem
+        if stem.lower().startswith("intro_"):
+            stem = stem[6:]
+        stem = stem.replace("_", " ").strip()
+        if not stem:
+            return "Speaker"
+
+        def _title_token(token: str) -> str:
+            if "-" not in token:
+                return token.capitalize()
+            return "-".join(part.capitalize() for part in token.split("-") if part)
+
+        parts = [_title_token(token) for token in stem.split() if token]
+        return " ".join(parts) if parts else "Speaker"
 
     def _prepend_reference_intros(
         self,

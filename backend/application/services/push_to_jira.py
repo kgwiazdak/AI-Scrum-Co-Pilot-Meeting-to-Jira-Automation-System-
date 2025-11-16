@@ -38,7 +38,10 @@ class PushTasksToJiraService:
                 logger.info("Skipping task %s; already pushed as %s", task["id"], task["jiraIssueKey"])
                 skipped += 1
                 continue
-            issue = self._create_issue(task)
+            assignee_account_id = task.get("assigneeAccountId")
+            if not assignee_account_id:
+                assignee_account_id = self._resolve_assignee_account(task)
+            issue = self._create_issue(task, assignee_account_id=assignee_account_id)
             self._repo.mark_task_pushed_to_jira(
                 task["id"],
                 issue_key=issue.key,
@@ -47,7 +50,7 @@ class PushTasksToJiraService:
             pushed += 1
         return PushTasksResult(total=len(tasks), pushed=pushed, skipped=skipped)
 
-    def _create_issue(self, task: dict) -> JiraIssue:
+    def _create_issue(self, task: dict, *, assignee_account_id: str | None) -> JiraIssue:
         try:
             labels = self._sanitize_labels(task.get("labels") or [])
             return self._jira.create_issue(
@@ -56,7 +59,7 @@ class PushTasksToJiraService:
                 issue_type=task.get("issueType", "Task"),
                 priority=task.get("priority", "Medium"),
                 labels=labels,
-                assignee_account_id=task.get("assigneeAccountId"),
+                assignee_account_id=assignee_account_id,
                 story_points=task.get("storyPoints"),
                 source_quote=task.get("sourceQuote"),
             )
@@ -75,3 +78,25 @@ class PushTasksToJiraService:
             if slug:
                 sanitized.append(slug[:255])
         return sanitized
+
+    def _resolve_assignee_account(self, task: dict) -> str | None:
+        user_id = task.get("assigneeId")
+        if not user_id:
+            return None
+        user = self._repo.get_user(user_id)
+        if not user:
+            return None
+        account_id = user.get("jiraAccountId")
+        if account_id:
+            return account_id
+        display_name = user.get("displayName")
+        if not display_name:
+            return None
+        try:
+            account_id = self._jira.find_user_account_id(display_name)
+        except JiraClientError:
+            logger.exception("Failed to resolve Jira account for %s", display_name)
+            return None
+        if account_id:
+            self._repo.update_user_jira_account(user_id, account_id)
+        return account_id

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import logging
+import os
+from pathlib import Path
 from functools import lru_cache
 
+from backend.application.services.voice_profiles import VoiceSamplesSyncService, register_voice_samples
 from backend.application.use_cases.extract_meeting import ExtractMeetingUseCase
 from backend.infrastructure.jira import JiraClient
 from backend.infrastructure.llm.task_extractor import LLMExtractor
@@ -14,6 +18,8 @@ from backend.infrastructure.transcription.azure_conversation import (
     SUPPORTED_AUDIO_EXTENSIONS,
 )
 from backend.settings import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -32,11 +38,13 @@ def get_transcriber() -> AzureConversationTranscriber | None:
     cfg = get_settings().azure_speech
     if not cfg.key or not cfg.region:
         return None
+    intro_dir = _ensure_intro_samples_dir()
     return AzureConversationTranscriber(
         key=cfg.key,
         region=cfg.region,
         language=cfg.language,
         sample_rate=cfg.sample_rate,
+        intro_audio_dir=intro_dir,
     )
 
 
@@ -94,3 +102,24 @@ def get_jira_client() -> JiraClient | None:
         )
     except ValueError:
         return None
+
+
+@lru_cache(maxsize=1)
+def _ensure_intro_samples_dir() -> Path:
+    cfg = get_settings().blob_storage
+    target = Path(os.getenv("INTRO_AUDIO_DIR", "data/voices"))
+    target.mkdir(parents=True, exist_ok=True)
+    if not cfg.connection_string or not cfg.container_workers_name:
+        return target
+    try:
+        syncer = VoiceSamplesSyncService(
+            connection_string=cfg.connection_string,
+            container_name=cfg.container_workers_name,
+            target_dir=target,
+        )
+        samples = syncer.sync()
+        if samples:
+            register_voice_samples(get_meetings_repository(), samples)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to synchronize intro samples: %s", exc)
+    return target

@@ -260,7 +260,8 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
                 f"""
                 SELECT
                     t.*,
-                    u.jira_account_id AS assignee_jira_account_id
+                    u.jira_account_id AS assignee_jira_account_id,
+                    u.display_name AS assignee_display_name
                 FROM tasks t
                 LEFT JOIN users u ON u.id = t.assignee_id
                 WHERE t.id IN ({placeholders})
@@ -297,7 +298,7 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
         conn = self._db.connect()
         try:
             rows = conn.execute(
-                "SELECT id, display_name, email, jira_account_id FROM users ORDER BY display_name"
+                "SELECT id, display_name, email, jira_account_id, voice_sample_path FROM users ORDER BY display_name"
             ).fetchall()
             return [
                 {
@@ -305,9 +306,39 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
                     "displayName": row["display_name"],
                     "email": row["email"],
                     "jiraAccountId": row["jira_account_id"],
+                    "voiceSamplePath": row["voice_sample_path"],
                 }
                 for row in rows
             ]
+        finally:
+            conn.close()
+
+    def get_user(self, user_id: str) -> dict[str, Any] | None:
+        conn = self._db.connect()
+        try:
+            row = conn.execute(
+                "SELECT id, display_name, email, jira_account_id FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+            if not row:
+                return None
+            return {
+                "id": row["id"],
+                "displayName": row["display_name"],
+                "email": row["email"],
+                "jiraAccountId": row["jira_account_id"],
+            }
+        finally:
+            conn.close()
+
+    def update_user_jira_account(self, user_id: str, account_id: str) -> None:
+        conn = self._db.connect()
+        try:
+            conn.execute(
+                "UPDATE users SET jira_account_id = ? WHERE id = ?",
+                (account_id, user_id),
+            )
+            conn.commit()
         finally:
             conn.close()
 
@@ -422,7 +453,7 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
                 assignee_name = getattr(task, "assignee_name", None)
                 assignee_id = None
                 if assignee_name:
-                    assignee_id = self._get_or_create_user(conn, assignee_name)
+                    assignee_id = self._find_user_id_by_name(conn, assignee_name)
                 conn.execute(
                     """
                     INSERT INTO tasks(
@@ -453,19 +484,43 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
             conn.close()
         return meeting_id, run_id
 
-    def _get_or_create_user(self, conn: sqlite3.Connection, display_name: str) -> str:
+    def register_voice_profile(self, *, display_name: str, voice_sample_path: str | None = None) -> str:
+        normalized = display_name.strip()
+        if not normalized:
+            raise ValueError("display_name is required")
+        conn = self._db.connect()
+        try:
+            row = conn.execute(
+                "SELECT id FROM users WHERE lower(display_name) = lower(?)",
+                (normalized,),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET display_name = ?, voice_sample_path = COALESCE(?, voice_sample_path)
+                    WHERE id = ?
+                    """,
+                    (normalized, voice_sample_path, row["id"]),
+                )
+                conn.commit()
+                return row["id"]
+            user_id = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO users(id, display_name, voice_sample_path) VALUES(?,?,?)",
+                (user_id, normalized, voice_sample_path),
+            )
+            conn.commit()
+            return user_id
+        finally:
+            conn.close()
+
+    def _find_user_id_by_name(self, conn: sqlite3.Connection, display_name: str) -> str | None:
         row = conn.execute(
-            "SELECT id FROM users WHERE display_name = ?",
-            (display_name,),
+            "SELECT id FROM users WHERE lower(display_name) = lower(?)",
+            (display_name.strip(),),
         ).fetchone()
-        if row:
-            return row["id"]
-        user_id = str(uuid.uuid4())
-        conn.execute(
-            "INSERT INTO users(id, display_name) VALUES(?, ?)",
-            (user_id, display_name),
-        )
-        return user_id
+        return row["id"] if row else None
 
 
 __all__ = [

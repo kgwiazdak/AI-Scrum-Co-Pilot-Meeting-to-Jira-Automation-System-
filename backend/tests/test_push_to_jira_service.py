@@ -7,9 +7,10 @@ from backend.infrastructure.jira import JiraClientError, JiraIssue
 
 
 class FakeRepo:
-    def __init__(self, tasks: list[dict]) -> None:
+    def __init__(self, tasks: list[dict], users: dict[str, dict] | None = None) -> None:
         self._tasks = tasks
         self.marked: list[tuple[str, str, str | None]] = []
+        self.users = users or {}
 
     def get_tasks_by_ids(self, ids):
         return [task for task in self._tasks if task["id"] in ids]
@@ -17,17 +18,28 @@ class FakeRepo:
     def mark_task_pushed_to_jira(self, task_id: str, *, issue_key: str, issue_url: str | None) -> None:
         self.marked.append((task_id, issue_key, issue_url))
 
+    def get_user(self, user_id: str):
+        return self.users.get(user_id)
+
+    def update_user_jira_account(self, user_id: str, account_id: str) -> None:
+        if user_id in self.users:
+            self.users[user_id]["jiraAccountId"] = account_id
+
 
 class FakeJiraClient:
     def __init__(self) -> None:
         self.calls: list[dict] = []
         self.counter = 0
+        self.lookup: dict[str, str] = {}
 
     def create_issue(self, **payload):
         self.counter += 1
         self.calls.append(payload)
         key = f"SCRUM-{self.counter}"
         return JiraIssue(key=key, url=f"https://example.atlassian.net/browse/{key}")
+
+    def find_user_account_id(self, display_name: str) -> str | None:
+        return self.lookup.get(display_name)
 
 
 def test_pushes_tasks_and_marks_repository():
@@ -101,3 +113,23 @@ def test_sanitizes_labels_before_pushing():
     service.push([task["id"]])
 
     assert jira.calls[0]["labels"] == ["data-ingestion", "model-drift", "qa-ops"]
+
+
+def test_looks_up_jira_account_when_missing(tmp_path=None):
+    task = {
+        "id": "task-2",
+        "summary": "Assign via lookup",
+        "assigneeId": "user-42",
+    }
+    users = {
+        "user-42": {"id": "user-42", "displayName": "Sam Carter", "jiraAccountId": None},
+    }
+    repo = FakeRepo([task], users=users)
+    jira = FakeJiraClient()
+    jira.lookup["Sam Carter"] = "jira-user-123"
+    service = PushTasksToJiraService(repo=repo, jira_client=jira)
+
+    service.push([task["id"]])
+
+    assert repo.users["user-42"]["jiraAccountId"] == "jira-user-123"
+    assert jira.calls[0]["assignee_account_id"] == "jira-user-123"

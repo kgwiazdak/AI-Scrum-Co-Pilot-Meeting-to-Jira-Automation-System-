@@ -92,7 +92,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             id TEXT PRIMARY KEY,
             display_name TEXT NOT NULL,
             email TEXT,
-            jira_account_id TEXT
+            jira_account_id TEXT,
+            voice_sample_path TEXT
         )
         """
     )
@@ -101,6 +102,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "tasks", "jira_issue_url", "TEXT")
     _ensure_column(conn, "tasks", "pushed_to_jira_at", "TEXT")
     _ensure_column(conn, "users", "jira_account_id", "TEXT")
+    _ensure_column(conn, "users", "voice_sample_path", "TEXT")
     conn.commit()
 
 

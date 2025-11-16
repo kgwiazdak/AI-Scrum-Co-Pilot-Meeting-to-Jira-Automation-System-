@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 class BlobStorageSettings(BaseModel):
     container_name: str | None = None
+    container_workers_name: str | None = None
     connection_string: str | None = None
 
 
@@ -50,6 +51,7 @@ class AppConfig(BaseModel):
         return cls(
             blob_storage=BlobStorageSettings(
                 container_name=os.getenv("AZURE_STORAGE_CONTAINER_NAME"),
+                container_workers_name=os.getenv("AZURE_STORAGE_CONTAINER_WORKERS"),
                 connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
             ),
             azure_speech=AzureSpeechSettings(

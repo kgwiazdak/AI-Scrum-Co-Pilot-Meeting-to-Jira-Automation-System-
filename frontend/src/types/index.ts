@@ -23,6 +23,7 @@ export interface Task {
   priority: Priority;
   storyPoints?: number;
   assigneeId?: string;
+  assigneeName?: string;
   assigneeAccountId?: string;
   labels: string[];
   status: TaskStatus;
@@ -37,4 +38,5 @@ export interface User {
   displayName: string;
   email?: string;
   jiraAccountId?: string;
+  voiceSamplePath?: string;
 }

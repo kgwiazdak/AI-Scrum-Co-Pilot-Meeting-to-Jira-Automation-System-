@@ -4,7 +4,7 @@ import base64
 import json
 from dataclasses import dataclass
 from typing import Any
-from urllib import error, request
+from urllib import error, parse, request
 
 
 class JiraClientError(RuntimeError):
@@ -128,8 +128,8 @@ class JiraClient:
             content.append({"type": "text", "text": cleaned})
         return {"type": "paragraph", "content": content}
 
-    def _request(self, method: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        body = json.dumps(payload).encode("utf-8")
+    def _request(self, method: str, path: str, payload: dict[str, Any] | None) -> Any:
+        body = json.dumps(payload).encode("utf-8") if payload is not None else None
         req = request.Request(
             f"{self._api_base}{path}",
             data=body,
@@ -150,3 +150,10 @@ class JiraClient:
             raise JiraClientError(f"Jira API error: {message}") from exc
         except error.URLError as exc:
             raise JiraClientError(f"Failed to reach Jira: {exc.reason}") from exc
+
+    def find_user_account_id(self, display_name: str) -> str | None:
+        query = parse.urlencode({"query": display_name, "maxResults": 1})
+        data = self._request("GET", f"/user/search?{query}", None)
+        if isinstance(data, list) and data:
+            return data[0].get("accountId")
+        return None
