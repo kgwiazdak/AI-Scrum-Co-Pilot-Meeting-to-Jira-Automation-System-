@@ -1,12 +1,4 @@
 Tomorrow & Sunday:
-Front - failed to load data instead of no files yet
-Front don't get mp3 yet - instead it gets transcription
-Dev is assigned to all tasks (?)
-
-Mlflow is bullshit - most important is trnascription and results and it's missing
-learn what is doing repository
-make it clean - 600 lines files
-make it well architected
 learn how to run it locally and run tests
 learn how to see database in the right
 
@@ -15,7 +7,7 @@ Monday:
 Better database
 Connect to jira
 Better names for files - looking like shit now
-
+change queue to azure queue
 
 Later next week:
 Airflow / Perfect
