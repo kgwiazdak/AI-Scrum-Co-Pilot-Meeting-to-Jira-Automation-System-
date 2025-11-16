@@ -277,9 +277,13 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
         result_model: ExtractionResult,
         *,
         meeting_id: Optional[str] = None,
+        title: Optional[str] = None,
+        started_at: Optional[str] = None,
     ) -> tuple[str, str]:
         meeting_id = meeting_id or str(uuid.uuid4())
         now = utc_now_iso()
+        meeting_title = title or filename
+        meeting_started_at = started_at or now
         conn = self._db.connect()
         try:
             conn.execute(
@@ -289,10 +293,10 @@ class SqliteMeetingsRepository(MeetingsRepositoryPort):
                 """,
                 (
                     meeting_id,
-                    filename,
+                    meeting_title,
                     transcript,
                     now,
-                    now,
+                    meeting_started_at,
                     "pending",
                     transcript,
                 ),

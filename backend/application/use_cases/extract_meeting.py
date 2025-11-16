@@ -31,6 +31,8 @@ class IngestedFile:
     filename: str
     content_type: str | None
     payload: bytes
+    title: str | None = None
+    started_at: str | None = None
 
 
 class ExtractMeetingUseCase:
@@ -58,7 +60,7 @@ class ExtractMeetingUseCase:
         else:
             self._audio_extensions = tuple()
 
-    async def __call__(self, upload: UploadFile) -> ExtractionResult:
+    async def __call__(self, upload: UploadFile, *, title: str | None = None, started_at: str | None = None) -> ExtractionResult:
         if not (content := await upload.read()):
             raise ExtractionError("Uploaded file is empty.", status_code=400)
 
@@ -67,6 +69,8 @@ class ExtractMeetingUseCase:
             filename=upload.filename or "uploaded_file",
             content_type=upload.content_type,
             payload=content,
+            title=title,
+            started_at=started_at,
         )
 
         transcript_blob_uri = await self._persist_original_file(context)
@@ -118,6 +122,8 @@ class ExtractMeetingUseCase:
                 transcript,
                 result,
                 meeting_id=ctx.meeting_id,
+                title=ctx.title,
+                started_at=ctx.started_at,
             )
 
         try:

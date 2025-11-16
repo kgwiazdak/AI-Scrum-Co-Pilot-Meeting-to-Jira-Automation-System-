@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from backend.application.use_cases.extract_meeting import ExtractMeetingUseCase, ExtractionError
@@ -13,10 +13,12 @@ router = APIRouter(tags=["extraction"])
 @router.post("/extract", response_model=ExtractionResult)
 async def extract_endpoint(
     file: UploadFile = File(...),
+    title: str = Form(...),
+    started_at: str = Form(...),
     workflow: ExtractMeetingUseCase = Depends(extraction_workflow),
 ):
     try:
-        result = await workflow(file)
+        result = await workflow(file, title=title, started_at=started_at)
     except ExtractionError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return JSONResponse(content=result.dict())

@@ -11,10 +11,16 @@ export const NewMeetingForm = () => {
   const navigate = useNavigate();
 
   const handleSubmit = async (values: MeetingFormValues) => {
+    const file = values.file;
+    if (!file) {
+      enqueueSnackbar('Audio file is required', { variant: 'error' });
+      return;
+    }
     try {
       await createMeeting.mutateAsync({
-        ...values,
+        title: values.title,
         startedAt: new Date(values.startedAt).toISOString(),
+        file,
       });
       enqueueSnackbar('Meeting created', { variant: 'success' });
       navigate('/meetings');
@@ -31,7 +37,7 @@ export const NewMeetingForm = () => {
       <MeetingForm
         onSubmit={handleSubmit}
         loading={createMeeting.isPending}
-        submitLabel="Create meeting"
+        submitLabel="Create"
         onCancel={() => navigate(-1)}
       />
     </Paper>

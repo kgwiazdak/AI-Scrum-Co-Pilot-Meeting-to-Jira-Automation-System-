@@ -15,15 +15,15 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, MutableMapping, Sequence
 
-try:  # pragma: no cover - optional dependency guard
+try:
     import mlflow
     from mlflow.exceptions import MlflowException
     from mlflow.tracking import MlflowClient
-except ModuleNotFoundError:  # pragma: no cover - fallback for local dev without mlflow
+except ModuleNotFoundError:
     class MlflowException(RuntimeError):
         """Placeholder raised when MLflow is unavailable."""
 
-    class MlflowClient:  # type: ignore[override]
+    class MlflowClient:
         def __init__(self, *args, **kwargs):
             raise RuntimeError("MlflowClient requires the 'mlflow' package to be installed")
 
@@ -194,7 +194,7 @@ def log_extraction_run(
     transcript_language = transcript_language or telemetry.get("transcription", {}).get("language", "unknown")
 
     redactor = _build_redactor()
-    redacted_snippet, rules = _prepare_transcript_snippet(transcript or "", redactor)
+    transcript_full_redacted, redacted_snippet, rules = _prepare_transcript_views(transcript or "", redactor)
 
     prompt_template = _resolve_prompt_template()
     prompt_hash = _hash_prompt(prompt_template)
@@ -229,6 +229,7 @@ def log_extraction_run(
     phase_data = _build_phase_data(
         telemetry=telemetry,
         transcript_snippet=redacted_snippet,
+        transcript_full=transcript_full_redacted,
         diarization_payload=diarization_payload or {},
         raw_payload=raw_payload,
         normalized_payload=normalized_payload,
@@ -302,6 +303,7 @@ def _build_phase_data(
     *,
     telemetry: Mapping[str, Any],
     transcript_snippet: str,
+    transcript_full: str,
     diarization_payload: Mapping[str, Any],
     raw_payload: Mapping[str, Any],
     normalized_payload: Mapping[str, Any],
@@ -337,6 +339,11 @@ def _build_phase_data(
                     transcript_snippet,
                     is_json=False,
                     compressible=False,
+                ),
+                ArtifactRecord(
+                    "artifacts/transcription/transcript_full.txt",
+                    transcript_full,
+                    is_json=False,
                 ),
                 ArtifactRecord(
                     "artifacts/transcription/diarization.json",
@@ -378,6 +385,11 @@ def _build_phase_data(
                 ArtifactRecord(
                     "artifacts/normalization/mapping.json",
                     {"schema_version": SCHEMA_VERSION, "assignee_mapping_version": ASSIGNEE_MAPPING_VERSION},
+                    is_json=True,
+                ),
+                ArtifactRecord(
+                    "artifacts/tasks/tasks.json",
+                    normalized_payload.get("tasks", []),
                     is_json=True,
                 ),
                 *(
@@ -555,12 +567,17 @@ def _scrub_secrets(text: str) -> str:
     return SECRET_VALUE_REGEX.sub(_mask, redacted)
 
 
-def _prepare_transcript_snippet(transcript: str, redactor: BasePIIRedactor) -> tuple[str, list[str]]:
+def _prepare_transcript_views(transcript: str, redactor: BasePIIRedactor) -> tuple[str, str, list[str]]:
     snippet_source = transcript[: min(MAX_TRANSCRIPT_CHARS, len(transcript))]
-    snippet = snippet_source[:TRANSCRIPT_SNIPPET_CHARS]
-    redacted_snippet, rules = redactor.redact(snippet)
-    cleaned = _scrub_secrets(redacted_snippet)
-    return cleaned[:TRANSCRIPT_SNIPPET_CHARS], rules
+    redacted_full, rules = redactor.redact(snippet_source)
+    cleaned_full = _scrub_secrets(redacted_full)
+    snippet = cleaned_full[:TRANSCRIPT_SNIPPET_CHARS]
+    return cleaned_full, snippet, rules
+
+
+def _prepare_transcript_snippet(transcript: str, redactor: BasePIIRedactor) -> tuple[str, list[str]]:
+    _, snippet, rules = _prepare_transcript_views(transcript, redactor)
+    return snippet, rules
 
 
 def _compute_approval_stats(payload: Mapping[str, Any]) -> Mapping[str, Any]:

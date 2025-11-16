@@ -1,4 +1,4 @@
-import { Button, Stack, TextField } from '@mui/material';
+import { Button, FormHelperText, Stack, TextField, Typography } from '@mui/material';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { MeetingFormValues } from '../../schemas/meeting';
@@ -29,8 +29,6 @@ export const MeetingForm = ({
     defaultValues: {
       title: '',
       startedAt: new Date().toISOString().slice(0, 16),
-      sourceUrl: '',
-      sourceText: '',
       ...defaultValues,
     },
   });
@@ -39,6 +37,7 @@ export const MeetingForm = ({
     <Stack
       component="form"
       spacing={3}
+      encType="multipart/form-data"
       onSubmit={handleSubmit((values) => onSubmit(values))}
     >
       <Controller
@@ -69,30 +68,31 @@ export const MeetingForm = ({
         )}
       />
       <Controller
-        name="sourceUrl"
+        name="file"
         control={control}
-        render={({ field, fieldState }) => (
-          <TextField
-            {...field}
-            label="Transcript URL"
-            placeholder="https://"
-            error={Boolean(fieldState.error)}
-            helperText={fieldState.error?.message ?? 'Link to transcript or recording'}
-          />
-        )}
-      />
-      <Controller
-        name="sourceText"
-        control={control}
-        render={({ field, fieldState }) => (
-          <TextField
-            {...field}
-            label="Transcript text"
-            multiline
-            minRows={4}
-            error={Boolean(fieldState.error)}
-            helperText={fieldState.error?.message}
-          />
+        render={({ field: { onChange, value, ref }, fieldState }) => (
+          <Stack spacing={1}>
+            <Button variant="outlined" component="label">
+              {value?.name ? 'Change audio file' : 'Upload audio file'}
+              <input
+                type="file"
+                hidden
+                ref={ref}
+                accept="audio/*,.mp3,.wav,.m4a,.aac,.wma,.ogg,.txt,.json"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  onChange(file);
+                  event.target.value = '';
+                }}
+              />
+            </Button>
+            <Typography variant="body2" color="text.secondary">
+              {value?.name ?? 'No file selected'}
+            </Typography>
+            {fieldState.error && (
+              <FormHelperText error>{fieldState.error.message}</FormHelperText>
+            )}
+          </Stack>
         )}
       />
       <Stack direction="row" justifyContent="flex-end" spacing={2}>

@@ -4,10 +4,10 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { apiClient } from './client';
+import { apiClient, extractClient } from './client';
 import { queryKeys } from './queryKeys';
 import type { Meeting, Task, User } from '../types';
-import type { MeetingFormValues } from '../schemas/meeting';
+import type { MeetingUpdateValues } from '../schemas/meeting';
 import type { TaskUpdateValues } from '../schemas/task';
 
 const fetchMeetings = async () => {
@@ -76,18 +76,25 @@ export const useUsers = () =>
     queryFn: fetchUsers,
   });
 
-type CreateMeetingInput = MeetingFormValues;
+type CreateMeetingInput = {
+  title: string;
+  startedAt: string;
+  file: File;
+};
 
 export const useCreateMeeting = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: CreateMeetingInput) =>
-      apiClient.post<Meeting>('/meetings', payload).then((res) => res.data),
-    onSuccess: (meeting) => {
-      queryClient.setQueryData<Meeting[]>(queryKeys.meetings(), (prev = []) => [
-        meeting,
-        ...prev,
-      ]);
+    mutationFn: async ({ title, startedAt, file }: CreateMeetingInput) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('title', title);
+      formData.append('started_at', startedAt);
+      const { data } = await extractClient.post('/extract', formData);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.meetings() });
     },
   });
 };
@@ -117,7 +124,7 @@ export const useDeleteMeeting = () => {
 
 type UpdateMeetingInput = {
   id: string;
-  data: Partial<MeetingFormValues>;
+  data: Partial<MeetingUpdateValues>;
 };
 
 export const useUpdateMeeting = () => {

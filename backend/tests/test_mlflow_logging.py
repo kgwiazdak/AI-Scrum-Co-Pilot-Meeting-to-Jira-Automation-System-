@@ -33,6 +33,17 @@ def test_prepare_transcript_snippet_truncates_and_scrubs():
     assert isinstance(rules, list)
 
 
+def test_prepare_transcript_views_returns_full_text_and_snippet():
+    redactor = logging_utils.RegexPIIRedactor("balanced")
+    long_text = "owner@example.com " + "a" * (logging_utils.TRANSCRIPT_SNIPPET_CHARS + 50)
+
+    full_text, snippet, rules = logging_utils._prepare_transcript_views(long_text, redactor)
+
+    assert snippet == full_text[: logging_utils.TRANSCRIPT_SNIPPET_CHARS]
+    assert "[REDACTED_EMAIL]" in full_text
+    assert rules
+
+
 def test_retry_eventual_success():
     state = {"count": 0}
 
@@ -61,3 +72,27 @@ def test_schema_contract_logs_version(mock_log_param):
     logging_utils._log_schema_contract()
 
     mock_log_param.assert_called_with("schema_version", logging_utils.SCHEMA_VERSION)
+
+
+def test_build_phase_data_includes_full_transcript_and_tasks_artifacts():
+    phases = logging_utils._build_phase_data(
+        telemetry={},
+        transcript_snippet="short",
+        transcript_full="secret_token=abcdef123456",
+        diarization_payload={},
+        raw_payload={"tasks": [{"summary": "t1"}]},
+        normalized_payload={"tasks": [{"summary": "t1"}]},
+        approval_stats={"approved": [], "tasks_approved": 0, "approval_rate": 0.0},
+        diff_stats={"averages": {}},
+        prompt_template="prompt",
+        json_valid_rate=1.0,
+        is_valid=True,
+        transcript_blob_uri="blob://uri",
+        transcript_language="en",
+    )
+
+    transcription_phase = next(phase for phase in phases if phase.name == "transcription")
+    normalization_phase = next(phase for phase in phases if phase.name == "normalization")
+
+    assert any(artifact.path.endswith("transcript_full.txt") for artifact in transcription_phase.artifacts)
+    assert any(artifact.path.endswith("tasks.json") for artifact in normalization_phase.artifacts)

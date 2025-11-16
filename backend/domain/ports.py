@@ -41,6 +41,8 @@ class MeetingsRepositoryPort(Protocol):
         result_model: ExtractionResult,
         *,
         meeting_id: str | None = None,
+        title: str | None = None,
+        started_at: str | None = None,
     ) -> tuple[str, str]:
         """Persist transcript and extraction payload and return (meeting_id, run_id)."""
 
