@@ -8,7 +8,7 @@ from typing import Iterable
 from azure.core.exceptions import AzureError
 from azure.storage.blob import BlobServiceClient
 
-from backend.infrastructure.persistence.sqlite import SqliteMeetingsRepository
+from backend.domain.ports import MeetingsRepositoryPort
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ class VoiceSamplesSyncService:
         return " ".join(parts) if parts else None
 
 
-def register_voice_samples(repo: SqliteMeetingsRepository, samples: Iterable[VoiceSample]) -> None:
+def register_voice_samples(repo: MeetingsRepositoryPort, samples: Iterable[VoiceSample]) -> None:
     """Ensure every downloaded voice sample has a matching user row."""
     for sample in samples:
         repo.register_voice_profile(display_name=sample.display_name, voice_sample_path=str(sample.local_path))

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Iterable, Protocol, runtime_checkable
 
 from backend.schemas import ExtractionResult
 from backend.domain.entities import MeetingImportJob
@@ -38,6 +38,58 @@ class ExtractionPort(Protocol):
 
 @runtime_checkable
 class MeetingsRepositoryPort(Protocol):
+    def list_meetings(self) -> list[dict[str, Any]]:
+        """Return all meetings with draft counts."""
+
+    def create_meeting(
+        self,
+        *,
+        title: str,
+        started_at: str,
+        source_url: str | None,
+        source_text: str | None,
+    ) -> dict[str, Any]:
+        """Create a manual meeting entry."""
+
+    def get_meeting(self, meeting_id: str) -> dict[str, Any] | None:
+        """Fetch a single meeting."""
+
+    def update_meeting(self, meeting_id: str, *, title: str | None, started_at: str | None) -> dict[str, Any]:
+        """Modify meeting metadata."""
+
+    def delete_meeting(self, meeting_id: str) -> bool:
+        """Remove a meeting and its tasks."""
+
+    def list_tasks(self, *, meeting_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+        """List tasks optionally filtered by meeting or status."""
+
+    def get_task(self, task_id: str) -> dict[str, Any] | None:
+        """Fetch a single task."""
+
+    def update_task(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Apply partial updates to a task."""
+
+    def bulk_update_status(self, ids: Iterable[str], status: str) -> int:
+        """Update status for multiple tasks."""
+
+    def get_tasks_by_ids(self, ids: Iterable[str]) -> list[dict[str, Any]]:
+        """Return tasks by ID preserving metadata."""
+
+    def mark_task_pushed_to_jira(self, task_id: str, *, issue_key: str, issue_url: str | None) -> None:
+        """Record Jira issue linkage."""
+
+    def list_users(self) -> list[dict[str, Any]]:
+        """Return known users."""
+
+    def register_voice_profile(self, *, display_name: str, voice_sample_path: str | None = None) -> str:
+        """Ensure a speaker profile exists."""
+
+    def get_user(self, user_id: str) -> dict[str, Any] | None:
+        """Fetch user by ID."""
+
+    def update_user_jira_account(self, user_id: str, account_id: str) -> None:
+        """Store Jira account linkage."""
+
     def create_meeting_stub(
         self,
         *,

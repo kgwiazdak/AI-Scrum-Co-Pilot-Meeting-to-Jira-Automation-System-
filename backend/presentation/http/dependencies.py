@@ -4,9 +4,8 @@ from fastapi import HTTPException
 
 from backend.application.commands.meeting_import import SubmitMeetingImportCommand
 from backend.application.use_cases.extract_meeting import ExtractMeetingUseCase
-from backend.domain.ports import MeetingImportQueuePort
+from backend.domain.ports import MeetingImportQueuePort, MeetingsRepositoryPort
 from backend.infrastructure.jira import JiraClient
-from backend.infrastructure.persistence.sqlite import SqliteMeetingsRepository
 from backend.infrastructure.storage.blob import BlobStorageService
 from backend.container import (
     get_blob_storage,
@@ -21,7 +20,7 @@ def extraction_workflow() -> ExtractMeetingUseCase:
     return get_extract_use_case()
 
 
-def data_repository() -> SqliteMeetingsRepository:
+def data_repository() -> MeetingsRepositoryPort:
     return get_meetings_repository()
 
 

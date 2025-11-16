@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field
 
 from backend.application.commands.meeting_import import MeetingImportPayload, SubmitMeetingImportCommand
 from backend.application.services.push_to_jira import PushTasksToJiraService
-from backend.infrastructure.persistence.sqlite import SqliteMeetingsRepository, TASK_STATUSES
+from backend.domain.ports import MeetingsRepositoryPort
+from backend.infrastructure.persistence.sqlite import TASK_STATUSES
 from backend.infrastructure.storage.blob import BlobStorageConfigError, BlobStorageService
 from backend.infrastructure.jira import JiraClient, JiraClientError
 from backend.presentation.http.dependencies import (
@@ -74,17 +75,17 @@ class MeetingImportRequest(BaseModel):
     meetingId: str | None = None
 
 
-def _repo(repo: SqliteMeetingsRepository = Depends(data_repository)) -> SqliteMeetingsRepository:
+def _repo(repo: MeetingsRepositoryPort = Depends(data_repository)) -> MeetingsRepositoryPort:
     return repo
 
 
 @router.get("/meetings")
-def list_meetings(repo: SqliteMeetingsRepository = Depends(_repo)):
+def list_meetings(repo: MeetingsRepositoryPort = Depends(_repo)):
     return repo.list_meetings()
 
 
 @router.post("/meetings", status_code=201)
-def create_meeting(payload: MeetingCreate, repo: SqliteMeetingsRepository = Depends(_repo)):
+def create_meeting(payload: MeetingCreate, repo: MeetingsRepositoryPort = Depends(_repo)):
     return repo.create_meeting(
         title=payload.title,
         started_at=payload.startedAt,
@@ -94,7 +95,7 @@ def create_meeting(payload: MeetingCreate, repo: SqliteMeetingsRepository = Depe
 
 
 @router.get("/meetings/{meeting_id}")
-def get_meeting(meeting_id: str, repo: SqliteMeetingsRepository = Depends(_repo)):
+def get_meeting(meeting_id: str, repo: MeetingsRepositoryPort = Depends(_repo)):
     meeting = repo.get_meeting(meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
@@ -102,7 +103,7 @@ def get_meeting(meeting_id: str, repo: SqliteMeetingsRepository = Depends(_repo)
 
 
 @router.patch("/meetings/{meeting_id}")
-def update_meeting(meeting_id: str, payload: MeetingUpdate, repo: SqliteMeetingsRepository = Depends(_repo)):
+def update_meeting(meeting_id: str, payload: MeetingUpdate, repo: MeetingsRepositoryPort = Depends(_repo)):
     try:
         return repo.update_meeting(
             meeting_id,
@@ -114,14 +115,14 @@ def update_meeting(meeting_id: str, payload: MeetingUpdate, repo: SqliteMeetings
 
 
 @router.delete("/meetings/{meeting_id}", status_code=204)
-def delete_meeting(meeting_id: str, repo: SqliteMeetingsRepository = Depends(_repo)):
+def delete_meeting(meeting_id: str, repo: MeetingsRepositoryPort = Depends(_repo)):
     deleted = repo.delete_meeting(meeting_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
 
 @router.get("/meetings/{meeting_id}/tasks")
-def list_meeting_tasks(meeting_id: str, repo: SqliteMeetingsRepository = Depends(_repo)):
+def list_meeting_tasks(meeting_id: str, repo: MeetingsRepositoryPort = Depends(_repo)):
     meeting = repo.get_meeting(meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
@@ -131,7 +132,7 @@ def list_meeting_tasks(meeting_id: str, repo: SqliteMeetingsRepository = Depends
 @router.get("/tasks")
 def list_tasks(
     status: str | None = Query(default=None),
-    repo: SqliteMeetingsRepository = Depends(_repo),
+    repo: MeetingsRepositoryPort = Depends(_repo),
 ):
     if status and status not in TASK_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status filter")
@@ -139,7 +140,7 @@ def list_tasks(
 
 
 @router.get("/tasks/{task_id}")
-def get_task(task_id: str, repo: SqliteMeetingsRepository = Depends(_repo)):
+def get_task(task_id: str, repo: MeetingsRepositoryPort = Depends(_repo)):
     task = repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -147,7 +148,7 @@ def get_task(task_id: str, repo: SqliteMeetingsRepository = Depends(_repo)):
 
 
 @router.patch("/tasks/{task_id}")
-def update_task(task_id: str, payload: TaskUpdate, repo: SqliteMeetingsRepository = Depends(_repo)):
+def update_task(task_id: str, payload: TaskUpdate, repo: MeetingsRepositoryPort = Depends(_repo)):
     try:
         return repo.update_task(task_id, payload.model_dump(exclude_unset=True))
     except ValueError as exc:
@@ -157,7 +158,7 @@ def update_task(task_id: str, payload: TaskUpdate, repo: SqliteMeetingsRepositor
 @router.post("/tasks/bulk-approve")
 def bulk_approve_tasks(
     payload: BulkAction,
-    repo: SqliteMeetingsRepository = Depends(_repo),
+    repo: MeetingsRepositoryPort = Depends(_repo),
     jira: JiraClient = Depends(jira_dependency),
 ):
     service = PushTasksToJiraService(repo=repo, jira_client=jira)
@@ -169,13 +170,13 @@ def bulk_approve_tasks(
 
 
 @router.post("/tasks/bulk-reject")
-def bulk_reject_tasks(payload: BulkAction, repo: SqliteMeetingsRepository = Depends(_repo)):
+def bulk_reject_tasks(payload: BulkAction, repo: MeetingsRepositoryPort = Depends(_repo)):
     repo.bulk_update_status(payload.ids, "rejected")
     return {"updated": len(payload.ids)}
 
 
 @router.get("/users")
-def list_users(repo: SqliteMeetingsRepository = Depends(_repo)):
+def list_users(repo: MeetingsRepositoryPort = Depends(_repo)):
     return repo.list_users()
 
 

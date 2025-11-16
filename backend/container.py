@@ -9,6 +9,7 @@ from backend.application.services.voice_profiles import VoiceSamplesSyncService,
 from backend.application.use_cases.extract_meeting import ExtractMeetingUseCase
 from backend.infrastructure.jira import JiraClient
 from backend.infrastructure.llm.task_extractor import LLMExtractor
+from backend.infrastructure.persistence.cosmos import CosmosMeetingsRepository
 from backend.infrastructure.persistence.sqlite import SqliteMeetingsRepository
 from backend.infrastructure.queue.background import BackgroundMeetingImportQueue
 from backend.infrastructure.storage.blob import BlobStorageService
@@ -49,9 +50,24 @@ def get_transcriber() -> AzureConversationTranscriber | None:
 
 
 @lru_cache(maxsize=1)
-def get_meetings_repository() -> SqliteMeetingsRepository:
-    cfg = get_settings().database
-    return SqliteMeetingsRepository(cfg.url)
+def get_meetings_repository():
+    settings = get_settings()
+    db_cfg = settings.database
+    cosmos_cfg = settings.cosmos
+    use_cosmos = db_cfg.provider == "cosmos" or (cosmos_cfg.account_uri and cosmos_cfg.key)
+    if use_cosmos:
+        if not cosmos_cfg.account_uri or not cosmos_cfg.key:
+            raise RuntimeError("COSMOS_ACCOUNT_URI and COSMOS_KEY must be set when DB_PROVIDER=cosmos.")
+        return CosmosMeetingsRepository(
+            account_uri=cosmos_cfg.account_uri,
+            key=cosmos_cfg.key,
+            database_name=cosmos_cfg.database,
+            meetings_container=cosmos_cfg.meetings_container,
+            tasks_container=cosmos_cfg.tasks_container,
+            users_container=cosmos_cfg.users_container,
+            runs_container=cosmos_cfg.runs_container,
+        )
+    return SqliteMeetingsRepository(db_cfg.url)
 
 
 @lru_cache(maxsize=1)

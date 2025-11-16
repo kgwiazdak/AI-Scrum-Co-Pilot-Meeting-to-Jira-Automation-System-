@@ -29,6 +29,17 @@ class LLMSettings(BaseModel):
 
 class DatabaseSettings(BaseModel):
     url: str = os.getenv("DB_URL", "sqlite:///./app.db")
+    provider: str = os.getenv("DB_PROVIDER", "sqlite").lower()
+
+
+class CosmosSettings(BaseModel):
+    account_uri: str | None = None
+    key: str | None = None
+    database: str = os.getenv("COSMOS_DB_NAME", "sprint-planning-copilot")
+    meetings_container: str = os.getenv("COSMOS_MEETINGS_CONTAINER", "meetings")
+    tasks_container: str = os.getenv("COSMOS_TASKS_CONTAINER", "tasks")
+    users_container: str = os.getenv("COSMOS_USERS_CONTAINER", "users")
+    runs_container: str = os.getenv("COSMOS_RUNS_CONTAINER", "extraction_runs")
 
 
 class JiraSettings(BaseModel):
@@ -44,6 +55,7 @@ class AppConfig(BaseModel):
     azure_speech: AzureSpeechSettings = AzureSpeechSettings()
     llm: LLMSettings = LLMSettings()
     database: DatabaseSettings = DatabaseSettings()
+    cosmos: CosmosSettings = CosmosSettings()
     jira: JiraSettings = JiraSettings()
 
     @classmethod
@@ -70,6 +82,16 @@ class AppConfig(BaseModel):
             ),
             database=DatabaseSettings(
                 url=os.getenv("DB_URL", "sqlite:///./app.db"),
+                provider=os.getenv("DB_PROVIDER", "sqlite").lower(),
+            ),
+            cosmos=CosmosSettings(
+                account_uri=os.getenv("COSMOS_ACCOUNT_URI"),
+                key=os.getenv("COSMOS_KEY"),
+                database=os.getenv("COSMOS_DB_NAME", "sprint-planning-copilot"),
+                meetings_container=os.getenv("COSMOS_MEETINGS_CONTAINER", "meetings"),
+                tasks_container=os.getenv("COSMOS_TASKS_CONTAINER", "tasks"),
+                users_container=os.getenv("COSMOS_USERS_CONTAINER", "users"),
+                runs_container=os.getenv("COSMOS_RUNS_CONTAINER", "extraction_runs"),
             ),
             jira=JiraSettings(
                 base_url=os.getenv("JIRA_BASE_URL"),

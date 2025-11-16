@@ -53,7 +53,8 @@ Create `.env` (backend) and `.env.development` (frontend). Key variables:
 | Azure Blob uploads | `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER_NAME`, `AZURE_STORAGE_CONTAINER_WORKERS` (intro voices) |
 | Azure Speech | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, `AZURE_SPEECH_LANGUAGE`, `TRANSCRIBER_SAMPLE_RATE` |
 | LLM extraction | `LLM_PROVIDER`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`, `OPENAI_MODEL`, `LLM_TEMPERATURE`, `MOCK_LLM=1` (local stub) |
-| Database | `DB_URL` (defaults to `sqlite:///./app.db`) |
+| Database | `DB_PROVIDER` (`sqlite` or `cosmos`), `DB_URL` (only for SQLite) |
+| Cosmos DB (if enabled) | `COSMOS_ACCOUNT_URI`, `COSMOS_KEY`, `COSMOS_DB_NAME`, `COSMOS_MEETINGS_CONTAINER`, `COSMOS_TASKS_CONTAINER`, `COSMOS_USERS_CONTAINER`, `COSMOS_RUNS_CONTAINER` |
 | Jira push | `JIRA_BASE_URL` (e.g. `https://importantwork.atlassian.net`), `JIRA_PROJECT_KEY` (e.g. `SCRUM`), `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_STORY_POINTS_FIELD` (custom field id, optional) |
 | Telemetry | `MLFLOW_TRACKING_URI`, `MLFLOW_EXPERIMENT_NAME` |
 | Frontend | `.env.development` → `VITE_API_URL=http://localhost:8000/api` |

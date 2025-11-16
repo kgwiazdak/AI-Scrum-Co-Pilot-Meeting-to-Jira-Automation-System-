@@ -5,8 +5,8 @@ import re
 from dataclasses import dataclass
 from typing import Iterable
 
+from backend.domain.ports import MeetingsRepositoryPort
 from backend.infrastructure.jira import JiraClient, JiraClientError, JiraIssue
-from backend.infrastructure.persistence.sqlite import SqliteMeetingsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class PushTasksResult:
 class PushTasksToJiraService:
     """Pushes approved tasks to Jira and updates local persistence."""
 
-    def __init__(self, *, repo: SqliteMeetingsRepository, jira_client: JiraClient) -> None:
+    def __init__(self, *, repo: MeetingsRepositoryPort, jira_client: JiraClient) -> None:
         self._repo = repo
         self._jira = jira_client
 
