@@ -15,6 +15,7 @@ def create_app() -> FastAPI:
             "http://127.0.0.1:5173",
             "http://localhost:4173",
             "http://127.0.0.1:4173",
+            "https://jira-frontend.gentleflower-2695c362.eastus.azurecontainerapps.io",
         ],
         allow_credentials=True,
         allow_methods=["*"],
