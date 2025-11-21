@@ -38,7 +38,9 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 # Copy application code
 COPY backend backend
-COPY data data
+
+# Create data directory for voice samples (will be synced from Azure at runtime)
+RUN mkdir -p data/voices
 
 EXPOSE 8000
 CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000"]
