@@ -1,0 +1,77 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-frontend.yml'
+  workflow_dispatch:  # Manual trigger
+
+env:
+  IMAGE_NAME: jira-frontend
+  RESOURCE_GROUP: jira-copilot-rg
+  APP_NAME: jira-frontend
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set environment variables
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "ENVIRONMENT=prod" >> $GITHUB_ENV
+            echo "VITE_API_URL=https://jira-api.gentleflower-2695c362.eastus.azurecontainerapps.io/api" >> $GITHUB_ENV
+            echo "VITE_APP_PROFILE=production" >> $GITHUB_ENV
+          else
+            echo "ENVIRONMENT=dev" >> $GITHUB_ENV
+            echo "VITE_API_URL=https://jira-api.gentleflower-2695c362.eastus.azurecontainerapps.io/api" >> $GITHUB_ENV
+            echo "VITE_APP_PROFILE=dev" >> $GITHUB_ENV
+          fi
+          echo "IMAGE_TAG=$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to ACR
+        run: |
+          az acr login --name ${{ secrets.ACR_NAME }}
+
+      - name: Build Docker image
+        working-directory: ./frontend
+        run: |
+          docker build \
+            --build-arg VITE_AZURE_AD_CLIENT_ID="${{ secrets.VITE_AZURE_AD_CLIENT_ID }}" \
+            --build-arg VITE_AZURE_AD_TENANT_ID="${{ secrets.VITE_AZURE_AD_TENANT_ID }}" \
+            --build-arg VITE_AZURE_AD_SCOPES="${{ secrets.VITE_AZURE_AD_SCOPES }}" \
+            --build-arg VITE_API_URL="${{ env.VITE_API_URL }}" \
+            --build-arg VITE_APP_PROFILE="${{ env.VITE_APP_PROFILE }}" \
+            -t ${{ secrets.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest \
+            .
+
+      - name: Push to ACR
+        run: |
+          docker push ${{ secrets.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
+
+      - name: Deploy to Azure Container Apps
+        run: |
+          az containerapp update \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+
+      - name: Deployment summary
+        run: |
+          echo "✅ Frontend deployed successfully!"
+          echo "🏷️ Image: ${{ env.IMAGE_TAG }}"
+          echo "🌐 URL: https://jira-frontend.gentleflower-2695c362.eastus.azurecontainerapps.io"
