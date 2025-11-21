@@ -20,7 +20,11 @@ env:
   WORKER_APP_NAME: jira-worker
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   build-and-deploy:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:

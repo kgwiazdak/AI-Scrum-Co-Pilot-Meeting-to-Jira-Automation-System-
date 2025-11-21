@@ -116,7 +116,7 @@ const SignInGate = ({children, scopes}: GateProps) => {
                 throw err;
             }
         });
-    }, [account, scopes, initialized]);
+    }, [account, scopes, initialized, defaultScope]);
 
     const handleSignIn = async () => {
         if (!msalInstance || !initialized) {

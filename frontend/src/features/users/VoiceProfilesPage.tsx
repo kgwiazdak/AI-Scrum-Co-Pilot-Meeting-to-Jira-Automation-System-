@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState} from 'react';
+import {useMemo, useState} from 'react';
 import {
     Autocomplete,
     Box,
@@ -26,11 +26,12 @@ export const VoiceProfilesPage = () => {
     const [displayName, setDisplayName] = useState('');
     const [file, setFile] = useState<File | null>(null);
 
-    useEffect(() => {
-        if (selectedUser) {
-            setDisplayName(selectedUser.displayName);
+    const handleUserSelect = (user: User | null) => {
+        setSelectedUser(user);
+        if (user) {
+            setDisplayName(user.displayName);
         }
-    }, [selectedUser]);
+    };
 
     const usersOptions = useMemo(() => users, [users]);
 
@@ -82,7 +83,7 @@ export const VoiceProfilesPage = () => {
                             value={selectedUser}
                             getOptionLabel={(option) => option.displayName}
                             onChange={(_event, value) =>
-                                setSelectedUser((value as User) ?? null)
+                                handleUserSelect((value as User) ?? null)
                             }
                             renderInput={(params) => (
                                 <TextField
