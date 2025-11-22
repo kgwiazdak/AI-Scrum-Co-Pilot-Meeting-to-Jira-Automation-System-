@@ -49,18 +49,6 @@ class BlobStorageService:
         self._ensure_container_exists()
         self._max_upload_ttl_seconds = max(60, min(int(os.getenv("BLOB_UPLOAD_MAX_TTL_SECONDS", "900")), 3600))
 
-    @classmethod
-    def from_env(cls) -> "BlobStorageService":
-        container_name = os.getenv("AZURE_STORAGE_CONTAINER_NAME")
-        connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-
-        if connection_string:
-            return cls(container_name=container_name, connection_string=connection_string)
-
-        raise BlobStorageConfigError(
-            "Azure Blob Storage is not configured. Set AZURE_STORAGE_CONTAINER_NAME and authentication variables."
-        )
-
     def _ensure_container_exists(self) -> None:
         try:
             self._container_client.create_container()

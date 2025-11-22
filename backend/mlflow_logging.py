@@ -582,11 +582,6 @@ def _prepare_transcript_views(transcript: str, redactor: BasePIIRedactor) -> tup
     return cleaned_full, snippet, rules
 
 
-def _prepare_transcript_snippet(transcript: str, redactor: BasePIIRedactor) -> tuple[str, list[str]]:
-    _, snippet, rules = _prepare_transcript_views(transcript, redactor)
-    return snippet, rules
-
-
 def _compute_approval_stats(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     approved = payload.get("approved")
     if not isinstance(approved, list):

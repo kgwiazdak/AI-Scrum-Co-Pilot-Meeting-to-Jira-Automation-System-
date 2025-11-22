@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import re
 from difflib import SequenceMatcher
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
@@ -10,23 +9,6 @@ from pydantic import ValidationError
 from backend.schemas import ExtractionResult
 
 logger = logging.getLogger(__name__)
-
-
-def _extract_speakers_from_transcript(transcript: str) -> list[str]:
-    """Extract unique speaker names from diarized transcript lines.
-
-    Diarized transcripts have the format: "Speaker Name: text..."
-    """
-    pattern = re.compile(r'^([A-Z][^:]{1,50}):\s', re.MULTILINE)
-    matches = pattern.findall(transcript)
-    seen = set()
-    speakers = []
-    for name in matches:
-        name = name.strip()
-        if name and name.lower() not in seen:
-            seen.add(name.lower())
-            speakers.append(name)
-    return speakers
 
 
 def _fuzzy_match_speaker(name: str, valid_speakers: list[str], threshold: float = 0.6) -> str | None:
@@ -171,12 +153,5 @@ class LLMExtractor:
             data = json.loads(repaired)
             return ExtractionResult.model_validate(data)
 
-    def extract_tasks_llm(self, transcript: str) -> ExtractionResult:
-        return self._llm_chain(transcript)
-
     def extract(self, transcript: str) -> ExtractionResult:
         return self._llm_chain(transcript)
-
-
-# Backwards compatibility for older imports
-Extractor = LLMExtractor

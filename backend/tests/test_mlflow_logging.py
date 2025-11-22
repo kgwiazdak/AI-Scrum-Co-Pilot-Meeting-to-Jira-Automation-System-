@@ -22,17 +22,6 @@ def test_regex_redactor_masks_email_and_phone():
     assert rules  # ensure at least one rule triggered
 
 
-def test_prepare_transcript_snippet_truncates_and_scrubs():
-    redactor = logging_utils.RegexPIIRedactor("balanced")
-    long_text = "secret_token=abcdef123456" + "a" * (logging_utils.TRANSCRIPT_SNIPPET_CHARS + 50)
-
-    snippet, rules = logging_utils._prepare_transcript_snippet(long_text, redactor)
-
-    assert len(snippet) <= logging_utils.TRANSCRIPT_SNIPPET_CHARS
-    assert "[REDACTED]" in snippet
-    assert isinstance(rules, list)
-
-
 def test_prepare_transcript_views_returns_full_text_and_snippet():
     redactor = logging_utils.RegexPIIRedactor("balanced")
     long_text = "owner@example.com " + "a" * (logging_utils.TRANSCRIPT_SNIPPET_CHARS + 50)

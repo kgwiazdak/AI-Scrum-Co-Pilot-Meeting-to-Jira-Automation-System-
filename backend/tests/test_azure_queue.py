@@ -21,6 +21,7 @@ class StubQueueClient:
         self.sent: list[str] = []
         self.deleted: list[tuple[str, str]] = []
         self._pending: list[str] = []
+        self.updated: list[tuple[str, int | None]] = []
 
     def send_message(self, payload: str) -> None:
         self.sent.append(payload)
@@ -33,6 +34,11 @@ class StubQueueClient:
 
     def delete_message(self, message_id: str, pop_receipt: str) -> None:
         self.deleted.append((message_id, pop_receipt))
+
+    def update_message(self, message_id: str, pop_receipt: str, content=None, visibility_timeout: int | None = None):
+        self.updated.append((message_id, visibility_timeout))
+        # Return a new pop receipt to emulate Azure behaviour
+        return StubQueueMessage(content=content or "", message_id=f"{message_id}-renewed-{len(self.updated)}")
 
 
 @pytest.mark.asyncio
@@ -88,4 +94,39 @@ async def test_azure_queue_worker_processes_payload_and_deletes_message():
 
     await _run_worker_once()
     assert processed == ["job-1"]
+    assert client.deleted, "Message should be deleted after processing"
+
+
+@pytest.mark.asyncio
+async def test_worker_extends_visibility_for_long_running_jobs():
+    client = StubQueueClient()
+    queue = AzureMeetingImportQueue(queue_client=client)
+    job = MeetingImportJob(
+        meeting_id="long-job",
+        title="Long run",
+        started_at="2024-11-05T09:00:00Z",
+        blob_url="https://blob",
+        original_filename=None,
+    )
+    await queue.enqueue(job)
+
+    async def slow_handler(_: MeetingImportJob) -> None:
+        await asyncio.sleep(1.1)
+
+    worker = AzureQueueWorker(
+        queue_client=client,
+        handler=slow_handler,
+        visibility_timeout=1,
+        poll_interval_seconds=0.01,
+        max_batch_size=1,
+    )
+
+    async def _run_worker_once():
+        task = asyncio.create_task(worker.run_forever())
+        await asyncio.sleep(1.5)
+        worker.stop()
+        await task
+
+    await _run_worker_once()
+    assert client.updated, "Visibility should be extended during long jobs"
     assert client.deleted, "Message should be deleted after processing"

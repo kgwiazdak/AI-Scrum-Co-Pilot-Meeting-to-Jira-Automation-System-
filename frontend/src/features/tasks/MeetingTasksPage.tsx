@@ -99,8 +99,22 @@ export const MeetingTasksPage = () => {
         }
     };
 
+    const MAX_VISIBLE_ROWS = 5;
+    const DATA_GRID_ROW_HEIGHT = 78;
+    const DATA_GRID_HEADER_HEIGHT = 64;
+    const TABLE_MAX_HEIGHT =
+        DATA_GRID_HEADER_HEIGHT + MAX_VISIBLE_ROWS * DATA_GRID_ROW_HEIGHT;
+
     return (
-        <Box>
+        <Box
+            sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%',
+                minHeight: 0,
+                overflow: 'hidden',
+            }}
+        >
             <PageHeader
                 eyebrow="Meeting review"
                 title={meeting ? meeting.title : 'Meeting tasks'}
@@ -172,15 +186,33 @@ export const MeetingTasksPage = () => {
                 search={search}
                 onSearchChange={setSearch}
             />
-            <Paper sx={{p: {xs: 1, md: 2}, borderRadius: 3}}>
-                <TasksTable
-                    tasks={filteredTasks}
-                    users={users}
-                    loading={isLoading || isFetching}
-                    selectedIds={selectedIds}
-                    onSelectionChange={setSelectedIds}
-                    onRowDoubleClick={(task) => setDrawerTaskId(task.id)}
-                />
+            <Paper
+                sx={{
+                    p: {xs: 1, md: 2},
+                    borderRadius: 3,
+                    flexGrow: 1,
+                    minHeight: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                }}
+            >
+                <Box
+                    sx={{
+                        flexGrow: 1,
+                        minHeight: 0,
+                        maxHeight: TABLE_MAX_HEIGHT,
+                    }}
+                >
+                    <TasksTable
+                        tasks={filteredTasks}
+                        users={users}
+                        loading={isLoading || isFetching}
+                        selectedIds={selectedIds}
+                        onSelectionChange={setSelectedIds}
+                        onRowDoubleClick={(task) => setDrawerTaskId(task.id)}
+                    />
+                </Box>
             </Paper>
             <Stack direction="row" spacing={2} mt={2}>
                 <Button

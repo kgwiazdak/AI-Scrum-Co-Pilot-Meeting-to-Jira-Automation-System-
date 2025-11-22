@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from azure.core.exceptions import ResourceExistsError
@@ -93,6 +94,7 @@ class AzureQueueWorker:
                 await self._process_message(message)
 
     async def _process_message(self, message: Any) -> None:
+        renewal_task: asyncio.Task[None] | None = None
         try:
             job_data = json.loads(message.content)
             job = MeetingImportJob(**job_data)
@@ -101,13 +103,54 @@ class AzureQueueWorker:
             await asyncio.to_thread(self._queue_client.delete_message, message.id, message.pop_receipt)
             return
 
+        if self._visibility_timeout:
+            renewal_task = asyncio.create_task(self._renew_visibility(message))
+
         try:
             await self._handler(job)
         except Exception:
             logger.exception("Meeting import job failed for %s; message will become visible again", job.meeting_id)
         else:
-            await asyncio.to_thread(self._queue_client.delete_message, message.id, message.pop_receipt)
-            logger.info("Processed and deleted job %s from queue", job.meeting_id)
+            try:
+                await asyncio.to_thread(self._queue_client.delete_message, message.id, message.pop_receipt)
+            except Exception:
+                logger.exception(
+                    "Processed job %s but failed to delete queue message; it may be re-delivered",
+                    job.meeting_id,
+                )
+            else:
+                logger.info("Processed and deleted job %s from queue", job.meeting_id)
+        finally:
+            if renewal_task:
+                renewal_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await renewal_task
+
+    async def _renew_visibility(self, message: Any) -> None:
+        """Periodically extend message invisibility while a long job runs."""
+        if self._visibility_timeout <= 0:
+            return
+
+        renew_after = max(1, self._visibility_timeout - min(30, max(1, self._visibility_timeout // 3)))
+        while True:
+            await asyncio.sleep(renew_after)
+            try:
+                updated = await asyncio.to_thread(
+                    self._queue_client.update_message,
+                    message.id,
+                    message.pop_receipt,
+                    visibility_timeout=self._visibility_timeout,
+                )
+                # update_message returns a new pop_receipt that must be used for future operations
+                message.pop_receipt = updated.pop_receipt
+                logger.debug("Extended visibility for message %s", message.id)
+            except Exception:
+                logger.warning(
+                    "Failed to extend visibility for message %s; it may be retried while still processing",
+                    getattr(message, "id", "<unknown>"),
+                    exc_info=True,
+                )
+                return
 
     def stop(self) -> None:
         self._running = False
