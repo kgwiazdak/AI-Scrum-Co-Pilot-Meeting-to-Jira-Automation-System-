@@ -27,6 +27,8 @@ export interface Task {
     assigneeAccountId?: string;
     status: TaskStatus;
     sourceQuote?: string;
+    jiraIssueKey?: string | null;
+    jiraIssueUrl?: string | null;
     pushedToJiraAt?: string | null;
 }
 

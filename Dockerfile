@@ -40,7 +40,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
 COPY backend backend
 
 # Copy entrypoint script and fix Windows line endings
-COPY entrypoint.sh /entrypoint.sh
+COPY backend/scripts/entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Create data directory for voice samples (will be synced from Azure at runtime)

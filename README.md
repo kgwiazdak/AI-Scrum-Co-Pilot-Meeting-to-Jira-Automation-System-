@@ -4,6 +4,10 @@
 
 [![Tests](https://github.com/kgwiazdak/sprint-planning-copilot/actions/workflows/test.yml/badge.svg)](https://github.com/kgwiazdak/sprint-planning-copilot/actions/workflows/test.yml)
 
+## Demo
+
+<img src="data/edited_video.gif" alt="Sprint Planning Copilot demo" width="900"/>
+
 ## What Does It Do?
 
 Sprint Planning Copilot automates the tedious part of sprint planning:
@@ -683,5 +687,3 @@ npm run build  # Ensure it builds
 - **GitHub Actions Setup**: See [`GITHUB_ACTIONS_SETUP.md`](./GITHUB_ACTIONS_SETUP.md)
 
 ---
-
-**Built with ❤️ for teams who want to focus on building, not note-taking.**

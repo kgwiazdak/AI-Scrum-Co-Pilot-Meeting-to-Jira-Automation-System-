@@ -7,7 +7,7 @@ import type {
     GridRowSelectionModel,
 } from '@mui/x-data-grid';
 import {DataGrid} from '@mui/x-data-grid';
-import {Box, Chip, MenuItem, TextField, Typography,} from '@mui/material';
+import {Box, Chip, Link, MenuItem, TextField, Typography,} from '@mui/material';
 import {useSnackbar} from 'notistack';
 import {useUpdateTask} from '../../api/hooks';
 import type {Task, User} from '../../types';
@@ -168,6 +168,30 @@ export const TasksTable = ({
                     }
                 />
             ),
+        },
+        {
+            field: 'jiraIssueKey',
+            headerName: 'Jira Issue',
+            width: 140,
+            sortable: false,
+            renderCell: (params) =>
+                params.value ? (
+                    params.row.jiraIssueUrl ? (
+                        <Link
+                            href={params.row.jiraIssueUrl ?? undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            {params.value}
+                        </Link>
+                    ) : (
+                        <Typography variant="body2">{params.value}</Typography>
+                    )
+                ) : (
+                    <Typography variant="body2" color="text.secondary">
+                        —
+                    </Typography>
+                ),
         },
     ];
 
