@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import re
+from difflib import SequenceMatcher
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from pydantic import ValidationError
@@ -10,9 +12,63 @@ from backend.schemas import ExtractionResult
 logger = logging.getLogger(__name__)
 
 
+def _extract_speakers_from_transcript(transcript: str) -> list[str]:
+    """Extract unique speaker names from diarized transcript lines.
+
+    Diarized transcripts have the format: "Speaker Name: text..."
+    """
+    pattern = re.compile(r'^([A-Z][^:]{1,50}):\s', re.MULTILINE)
+    matches = pattern.findall(transcript)
+    seen = set()
+    speakers = []
+    for name in matches:
+        name = name.strip()
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            speakers.append(name)
+    return speakers
+
+
+def _fuzzy_match_speaker(name: str, valid_speakers: list[str], threshold: float = 0.6) -> str | None:
+    """Find the best matching speaker using fuzzy string matching.
+
+    Returns the matched speaker name if similarity exceeds threshold, otherwise None.
+    """
+    if not name or not valid_speakers:
+        return None
+
+    name_lower = name.lower().strip()
+    best_match = None
+    best_score = 0.0
+
+    for speaker in valid_speakers:
+        speaker_lower = speaker.lower()
+        # Exact match (case-insensitive)
+        if name_lower == speaker_lower:
+            return speaker
+
+        # Check if name is a substring (e.g., "Adrian" matches "Adrian Puchacki")
+        if name_lower in speaker_lower or speaker_lower in name_lower:
+            score = len(name_lower) / max(len(speaker_lower), 1)
+            if score > best_score:
+                best_score = score
+                best_match = speaker
+                continue
+
+        # Fuzzy matching
+        score = SequenceMatcher(None, name_lower, speaker_lower).ratio()
+        if score > best_score:
+            best_score = score
+            best_match = speaker
+
+    if best_score >= threshold:
+        return best_match
+    return None
+
+
 class LLMExtractor:
     @staticmethod
-    def _llm_chain(transcript: str) -> ExtractionResult:
+    def _llm_chain(transcript: str, valid_speakers: list[str] | None = None) -> ExtractionResult:
         provider = os.getenv("LLM_PROVIDER", "azure").lower()
 
         if provider == "azure":
@@ -37,6 +93,16 @@ class LLMExtractor:
             )
         else:
             llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"), temperature=0.1)
+
+        # Build speaker constraint for the prompt
+        speaker_constraint = ""
+        if valid_speakers:
+            speaker_list = ", ".join(f'"{s}"' for s in valid_speakers)
+            speaker_constraint = (
+                f"\n\nIMPORTANT: The only valid assignees are the identified speakers from the meeting: [{speaker_list}]. "
+                "assignee_name MUST be exactly one of these names or null. Do NOT use any other names."
+            )
+
         system = (
             "You are an Agile Product Owner. Extract Jira-ready tasks from meeting transcripts. "
             "Return STRICT JSON following the schema:\n"
@@ -45,12 +111,35 @@ class LLMExtractor:
             "\"assignee_name\": str|null, \"priority\": one of [\"Low\",\"Medium\",\"High\"], "
             "\"story_points\": int|null, \"labels\": [str], \"links\": [str], \"quotes\": [str]\n    }}\n  ]\n}}"
             "\nIf no assignee, set null. Use quotes to include short verbatim snippets from the transcript that justify each task."
+            f"{speaker_constraint}"
         )
         human = f"Transcript:\n{transcript}\n---\nReturn only JSON, no prose."
         messages = [SystemMessage(content=system), HumanMessage(content=human)]
 
         raw_response = llm.invoke(messages).content
-        return Extractor._parse_or_repair_response(llm, raw_response)
+        result = LLMExtractor._parse_or_repair_response(llm, raw_response)
+        # Post-process to validate and normalize assignee names
+        return LLMExtractor._validate_assignees(result, valid_speakers)
+
+    @staticmethod
+    def _validate_assignees(result: ExtractionResult, valid_speakers: list[str] | None) -> ExtractionResult:
+        """Ensure all assignee_name values are valid speakers or set to None."""
+        if not valid_speakers:
+            return result
+
+        for task in result.tasks:
+            if task.assignee_name:
+                matched = _fuzzy_match_speaker(task.assignee_name, valid_speakers)
+                if matched:
+                    task.assignee_name = matched
+                else:
+                    logger.warning(
+                        "Assignee '%s' not found in valid speakers %s, setting to None",
+                        task.assignee_name,
+                        valid_speakers,
+                    )
+                    task.assignee_name = None
+        return result
 
     @staticmethod
     def _parse_or_repair_response(llm, payload: str) -> ExtractionResult:

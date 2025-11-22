@@ -7,8 +7,8 @@ import {AuthProvider} from './AuthProvider';
 const queryClient = new QueryClient({
     defaultOptions: {
         queries: {
-            staleTime: 5 * 60 * 1000,
-            refetchOnWindowFocus: false,
+            staleTime: 30 * 1000, // 30 seconds - shorter to ensure fresher data across views
+            refetchOnWindowFocus: true, // Refetch when user returns to tab
             retry: 1,
         },
         mutations: {

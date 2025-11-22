@@ -151,9 +151,44 @@ export const useCreateMeeting = () => {
                 originalFilename: file.name,
                 meetingId: ticket.meetingId,
             });
+            // Return meeting data for optimistic update
+            return {
+                id: ticket.meetingId,
+                title,
+                startedAt,
+                status: 'queued' as const,
+                draftTaskCount: 0,
+            };
         },
-        onSuccess: () => {
+        onMutate: async ({title, startedAt}) => {
+            // Cancel any outgoing refetches to prevent overwriting optimistic update
+            await queryClient.cancelQueries({queryKey: queryKeys.meetings()});
+            const previous = queryClient.getQueryData<Meeting[]>(queryKeys.meetings());
+            // Optimistically add a placeholder meeting immediately
+            const optimisticMeeting: Meeting = {
+                id: `temp-${Date.now()}`,
+                title,
+                startedAt,
+                status: 'queued',
+                draftTaskCount: 0,
+            };
+            queryClient.setQueryData<Meeting[]>(queryKeys.meetings(), (current = []) => [
+                optimisticMeeting,
+                ...current,
+            ]);
+            return {previous};
+        },
+        onError: (_error, _variables, context) => {
+            // Rollback on error
+            if (context?.previous) {
+                queryClient.setQueryData(queryKeys.meetings(), context.previous);
+            }
+        },
+        onSettled: () => {
+            // Always refetch after mutation settles to get real server state
             queryClient.invalidateQueries({queryKey: queryKeys.meetings()});
+            // Also invalidate review tasks since a new meeting may create draft tasks
+            queryClient.invalidateQueries({queryKey: queryKeys.reviewTasks()});
         },
     });
 };
@@ -177,6 +212,10 @@ export const useDeleteMeeting = () => {
         },
         onSettled: () => {
             queryClient.invalidateQueries({queryKey: queryKeys.meetings()});
+            // Also invalidate review tasks since deleting a meeting removes its tasks
+            queryClient.invalidateQueries({queryKey: queryKeys.reviewTasks()});
+            // Invalidate all task lists
+            queryClient.invalidateQueries({queryKey: ['tasks']});
         },
     });
 };
@@ -359,6 +398,8 @@ const useBulkTaskMutation = (status: Task['status'], url: string) => {
         onSettled: () => {
             queryClient.invalidateQueries({queryKey: queryKeys.reviewTasks()});
             queryClient.invalidateQueries({queryKey: ['tasks']});
+            // Also invalidate meetings since draft task count may have changed
+            queryClient.invalidateQueries({queryKey: queryKeys.meetings()});
         },
     });
 };

@@ -14,6 +14,8 @@ class AzureConversationTranscriber:
     """Azure Cognitive Services backed transcription with intro alignment."""
 
     SUPPORTED_AUDIO_EXTENSIONS: tuple[str, ...] = (".wav", ".mp3")
+    DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS: int = 600
+    DEFAULT_STOP_TIMEOUT_SECONDS: int = 10
 
     def __init__(
             self,
@@ -26,6 +28,8 @@ class AzureConversationTranscriber:
             intro_audio_dir: str | Path | None = None,
             intro_pattern: str = "intro_*.*",
             intro_silence_ms: int = 300,
+            transcription_timeout: int | None = None,
+            stop_timeout: int | None = None,
     ) -> None:
         if not key or not region:
             raise ValueError("Azure Speech key and region must be configured")
@@ -38,6 +42,12 @@ class AzureConversationTranscriber:
         self._intro_dir = Path(intro_audio_dir or os.getenv("INTRO_AUDIO_DIR", "data/voices"))
         self._intro_pattern = intro_pattern or os.getenv("INTRO_AUDIO_PATTERN", "intro_*.*")
         self._intro_silence_ms = intro_silence_ms or int(os.getenv("INTRO_SILENCE_MS", "300"))
+        self._transcription_timeout = transcription_timeout if transcription_timeout else int(
+            os.getenv("TRANSCRIPTION_TIMEOUT_SECONDS", str(self.DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS))
+        )
+        self._stop_timeout = stop_timeout if stop_timeout is not None else int(
+            os.getenv("TRANSCRIPTION_STOP_TIMEOUT_SECONDS", str(self.DEFAULT_STOP_TIMEOUT_SECONDS))
+        )
 
         self._speech_config = self._build_speech_config()
 
@@ -202,24 +212,60 @@ class AzureConversationTranscriber:
         transcriber.session_stopped.connect(_stopped_handler)
 
         started = False
+        timed_out = False
         try:
             transcriber.start_transcribing_async().get()
             feed_audio()
             started = True
-            done.wait(timeout=60)
+            if not done.wait(timeout=self._transcription_timeout):
+                timed_out = True
         finally:
-            try:
-                if started:
-                    transcriber.stop_transcribing_async().get()
-            finally:
-                transcriber.transcribed.disconnect_all()
+            self._cleanup_transcriber(transcriber, started, done)
 
         if canceled_error:
             raise RuntimeError(canceled_error[0])
+        if timed_out:
+            raise RuntimeError(
+                f"Transcription timed out after {self._transcription_timeout} seconds. "
+                "The audio file may be too long or the service is unresponsive."
+            )
         if not recognized_segments:
             raise RuntimeError("No speech could be recognized.")
 
         return "\n".join(recognized_segments)
+
+    def _cleanup_transcriber(
+            self,
+            transcriber: speech_transcription.ConversationTranscriber,
+            started: bool,
+            done: threading.Event,
+    ) -> None:
+        """Safely clean up transcriber resources with timeout protection."""
+        try:
+            if started:
+                stop_future = transcriber.stop_transcribing_async()
+                try:
+                    stop_future.get(timeout=self._stop_timeout * 1000)
+                except Exception:
+                    # If stop times out, wait briefly for session_stopped event
+                    # then proceed with cleanup regardless
+                    done.wait(timeout=1)
+        except Exception:
+            # Swallow any exceptions during cleanup to prevent masking the original error
+            pass
+        finally:
+            try:
+                transcriber.transcribed.disconnect_all()
+            except Exception:
+                pass
+            try:
+                transcriber.canceled.disconnect_all()
+            except Exception:
+                pass
+            try:
+                transcriber.session_stopped.disconnect_all()
+            except Exception:
+                pass
 
 
 # Backwards-compatible names for legacy imports

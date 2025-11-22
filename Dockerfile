@@ -39,8 +39,13 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # Copy application code
 COPY backend backend
 
+# Copy entrypoint script and fix Windows line endings
+COPY entrypoint.sh /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
+
 # Create data directory for voice samples (will be synced from Azure at runtime)
 RUN mkdir -p data/voices
 
 EXPOSE 8000
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000"]

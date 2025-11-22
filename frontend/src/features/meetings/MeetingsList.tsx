@@ -79,9 +79,10 @@ export const MeetingsList = () => {
         if (!hasInFlight) {
             return;
         }
+        // Poll every 2 seconds for faster status updates when jobs are in flight
         const interval = window.setInterval(() => {
             refetch();
-        }, 5000);
+        }, 2000);
         return () => window.clearInterval(interval);
     }, [meetings, refetch]);
 
