@@ -12,12 +12,24 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    worker = get_meeting_queue_worker()
-    if worker is None:
-        raise RuntimeError(
-            "Azure queue worker is not configured. "
-            "Set AZURE_STORAGE_QUEUE_NAME and the matching connection string before starting the worker."
+    try:
+        worker = get_meeting_queue_worker()
+    except Exception:  # pragma: no cover - defensive
+        logger.exception(
+            "Failed to initialize queue worker (likely missing/invalid Azure Storage queue config). "
+            "Worker will stay idle instead of exiting."
         )
+        worker = None
+
+    if worker is None:
+        logger.warning(
+            "Azure queue worker is not configured. "
+            "Set AZURE_STORAGE_QUEUE_NAME and the matching connection string to enable the worker. "
+            "Worker will stay idle instead of exiting."
+        )
+        # Keep the container alive to avoid crash-loop when queue is intentionally absent.
+        while True:
+            await asyncio.sleep(60)
     logger.info("Starting Azure queue worker")
     await worker.run_forever()
 
